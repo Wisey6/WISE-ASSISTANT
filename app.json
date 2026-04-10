@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Wise",
+    "slug": "wise-assistant",
+    "scheme": "wise",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#F8F8F8",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.wise.assistant",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Wise uses the microphone so you can talk to your assistant hands-free.",
+        "NSSpeechRecognitionUsageDescription": "Wise transcribes your voice so it can turn what you say into tasks.",
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "package": "com.wise.assistant",
+      "adaptiveIcon": {
+        "backgroundColor": "#F8F8F8"
+      },
+      "permissions": ["RECORD_AUDIO", "POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#1C1C1E"
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Wise uses the microphone so you can talk to your assistant hands-free."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
