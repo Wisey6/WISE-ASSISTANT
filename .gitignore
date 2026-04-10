@@ -12,7 +12,6 @@ yarn-error.*
 .expo-shared/
 dist/
 web-build/
-expo-env.d.ts
 
 # Native
 *.orig.*
