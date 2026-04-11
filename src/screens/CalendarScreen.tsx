@@ -1,308 +1,270 @@
-import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useMemo, useRef } from 'react';
+import { Pressable, SectionList, StyleSheet, View } from 'react-native';
 import {
   addDays,
-  addMonths,
-  eachDayOfInterval,
-  endOfMonth,
-  endOfWeek,
   format,
   isSameDay,
-  isSameMonth,
+  isToday,
+  isTomorrow,
+  isYesterday,
   parseISO,
-  startOfMonth,
-  startOfWeek,
+  startOfDay,
 } from 'date-fns';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
-import { Icon, Screen, TaskCard, Text } from '@/components';
+import { Icon, Screen, Text } from '@/components';
 import { colors, radius, spacing } from '@/theme';
 import { useTaskStore } from '@/store/useTaskStore';
 import { usePartnersStore } from '@/store/usePartnersStore';
 import type { Task } from '@/types';
-
-type View = 'W' | 'M';
+import type { MainTabParamList } from '@/navigation/types';
 
 /**
- * Calendar screen with a W/M toggle. Month view shows a grid with
- * small colored time-block bars under each day (matching the
- * reference layout). Week view shows a horizontal scroll of days
- * and a vertical list of the selected day's time blocks.
+ * Minimal agenda calendar.
+ *
+ * There is intentionally NO month grid, NO week view, NO toggle —
+ * the best minimal calendars (Things 3 "Upcoming", Fantastical's
+ * list view, Linear's inbox) are just a vertical scroll of days
+ * with their events, and that's exactly what this is.
+ *
+ * Design rules:
+ *   - One column, grouped by day
+ *   - Empty days are skipped entirely (no "nothing here" noise)
+ *   - Today gets a small accent; relative labels for ±1 day
+ *   - Each row is time + title + a small color dot (whose task)
+ *   - Tapping any row opens the owl — the AI is the only "add" path
+ *
+ * The add-flow is deliberately unified: there is no "+" or
+ * in-place new-event. If you want to add something, tell the owl.
+ * That's the whole point of the app.
  */
 export const CalendarScreen: React.FC = () => {
+  const insets = useSafeAreaInsets();
   const tasks = useTaskStore((s) => s.tasks);
-  const toggleTask = useTaskStore((s) => s.toggleTask);
   const colorFor = usePartnersStore((s) => s.colorFor);
-  const partners = usePartnersStore((s) => s.partners);
+  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const listRef = useRef<SectionList<Task>>(null);
 
-  const [view, setView] = useState<View>('M');
-  const [cursor, setCursor] = useState(new Date());
-  const [selected, setSelected] = useState(new Date());
+  // Group dated tasks by calendar day, sorted chronologically.
+  // Only days with at least one task get a section — empty days drop.
+  const sections = useMemo(() => buildAgenda(tasks), [tasks]);
 
-  const monthDays = useMemo(() => {
-    const start = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 });
-    const end = endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 });
-    return eachDayOfInterval({ start, end });
-  }, [cursor]);
+  const handleAskOwl = () => {
+    navigation.navigate('Home' as never);
+  };
 
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, Task[]>();
-    for (const t of tasks) {
-      const when = t.startAt ?? t.dueAt;
-      if (!when) continue;
-      const key = format(parseISO(when), 'yyyy-MM-dd');
-      const list = map.get(key) ?? [];
-      list.push(t);
-      map.set(key, list);
-    }
-    // Sort tasks within each day
-    for (const list of map.values()) {
-      list.sort((a, b) => {
-        const aw = new Date(a.startAt ?? a.dueAt ?? 0).getTime();
-        const bw = new Date(b.startAt ?? b.dueAt ?? 0).getTime();
-        return aw - bw;
+  const jumpToToday = () => {
+    const todayIdx = sections.findIndex((s) => isToday(parseISO(s.isoDate)));
+    if (todayIdx >= 0) {
+      listRef.current?.scrollToLocation({
+        sectionIndex: todayIdx,
+        itemIndex: 0,
+        animated: true,
+        viewOffset: 12,
       });
     }
-    return map;
-  }, [tasks]);
-
-  const selectedTasks =
-    tasksByDay.get(format(selected, 'yyyy-MM-dd')) ?? [];
+  };
 
   return (
-    <Screen scroll>
-      {/* Header */}
+    <Screen scroll={false}>
+      {/* Header — just the title and a small "today" pill */}
       <View style={styles.header}>
-        <Pressable
-          onPress={() => setCursor((c) => addMonths(c, -1))}
-          style={styles.chevBtn}
-        >
-          <Icon name="chevronRight" size={20} color={colors.text} />
+        <Text variant="largeTitle">Calendar</Text>
+        <Pressable style={styles.todayPill} onPress={jumpToToday} hitSlop={8}>
+          <Text variant="footnote" weight="600">
+            Today
+          </Text>
         </Pressable>
-        <Text variant="largeTitle">{format(cursor, 'MMMM')}</Text>
-        <ViewToggle value={view} onChange={setView} />
       </View>
 
-      {view === 'M' ? (
-        <MonthGrid
-          monthDays={monthDays}
-          cursor={cursor}
-          selected={selected}
-          onSelect={setSelected}
-          tasksByDay={tasksByDay}
-        />
+      {sections.length === 0 ? (
+        <EmptyState onAsk={handleAskOwl} />
       ) : (
-        <WeekStrip
-          selected={selected}
-          onSelect={setSelected}
-          tasksByDay={tasksByDay}
+        <SectionList
+          ref={listRef}
+          sections={sections}
+          keyExtractor={(item) => item.id}
+          renderSectionHeader={({ section }) => (
+            <DayHeader date={parseISO(section.isoDate)} />
+          )}
+          renderItem={({ item }) => (
+            <AgendaRow task={item} accentColor={item.color ?? colorFor(item.ownerId)} />
+          )}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          SectionSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={{
+            paddingBottom: insets.bottom + 140,
+          }}
+          showsVerticalScrollIndicator={false}
+          onScrollToIndexFailed={() => undefined}
         />
       )}
 
-      {/* Selected-day heading + list */}
-      <View style={styles.selectedHead}>
-        <Text variant="title3">{format(selected, 'EEEE, MMM d')}</Text>
-        <Text variant="footnote">
-          {selectedTasks.length === 0
-            ? 'Wide open'
-            : `${selectedTasks.length} ${selectedTasks.length === 1 ? 'item' : 'items'}`}
+      {/* Persistent quick-ask bar: one tap → full owl conversation */}
+      <Pressable
+        onPress={handleAskOwl}
+        style={[styles.askBar, { bottom: insets.bottom + 90 }]}
+      >
+        <Icon name="sparkle" size={16} color={colors.textInverse} />
+        <Text variant="footnote" color={colors.textInverse} weight="500">
+          Tell the owl what's coming up…
         </Text>
-      </View>
-
-      <View style={styles.selectedStack}>
-        {selectedTasks.length === 0 ? (
-          <View style={styles.empty}>
-            <Text variant="headline">Nothing scheduled</Text>
-            <Text variant="subhead" style={{ marginTop: 4 }}>
-              This day is open for you.
-            </Text>
-          </View>
-        ) : (
-          selectedTasks.map((t) => (
-            <TaskCard
-              key={t.id}
-              task={t}
-              accentColor={t.color ?? colorFor(t.ownerId)}
-              ownerLabel={
-                t.ownerId === 'me'
-                  ? 'Me'
-                  : partners.find((p) => p.id === t.ownerId)?.name ?? 'Partner'
-              }
-              onToggle={toggleTask}
-            />
-          ))
-        )}
-      </View>
+      </Pressable>
     </Screen>
   );
 };
 
 /* -------------------------------------------------------------------------
- * Sub-components
+ * Day section header
  * -------------------------------------------------------------------------
  */
 
-const ViewToggle: React.FC<{
-  value: View;
-  onChange: (v: View) => void;
-}> = ({ value, onChange }) => (
-  <View style={styles.toggle}>
-    {(['W', 'M'] as const).map((v) => {
-      const active = v === value;
-      return (
-        <Pressable
-          key={v}
-          onPress={() => onChange(v)}
-          style={[styles.togglePill, active && styles.togglePillActive]}
-        >
-          <Text
-            variant="footnote"
-            weight="600"
-            color={active ? colors.textInverse : colors.textSecondary}
-          >
-            {v}
-          </Text>
-        </Pressable>
-      );
-    })}
-  </View>
-);
-
-interface MonthGridProps {
-  monthDays: Date[];
-  cursor: Date;
-  selected: Date;
-  onSelect: (d: Date) => void;
-  tasksByDay: Map<string, Task[]>;
-}
-
-const MonthGrid: React.FC<MonthGridProps> = ({
-  monthDays,
-  cursor,
-  selected,
-  onSelect,
-  tasksByDay,
-}) => (
-  <View style={{ marginBottom: spacing.xl }}>
-    <View style={styles.weekRow}>
-      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-        <Text key={d} variant="caption" style={styles.weekday}>
-          {d}
-        </Text>
-      ))}
-    </View>
-
-    <View style={styles.grid}>
-      {monthDays.map((day) => {
-        const inMonth = isSameMonth(day, cursor);
-        const active = isSameDay(day, selected);
-        const dayTasks = tasksByDay.get(format(day, 'yyyy-MM-dd')) ?? [];
-        return (
-          <Pressable
-            key={day.toISOString()}
-            onPress={() => onSelect(day)}
-            style={styles.dayCell}
-          >
-            <View style={[styles.dayInner, active && styles.dayInnerActive]}>
-              <Text
-                variant="callout"
-                weight="600"
-                color={
-                  active
-                    ? colors.textInverse
-                    : inMonth
-                    ? colors.text
-                    : colors.textTertiary
-                }
-              >
-                {format(day, 'd')}
-              </Text>
-            </View>
-            {/* Stacked color bars — one per task, capped at 4 */}
-            <View style={styles.barStack}>
-              {dayTasks.slice(0, 4).map((t, idx) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.dayBar,
-                    {
-                      backgroundColor: t.color ?? colors.surfaceMuted,
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-          </Pressable>
-        );
-      })}
-    </View>
-  </View>
-);
-
-interface WeekStripProps {
-  selected: Date;
-  onSelect: (d: Date) => void;
-  tasksByDay: Map<string, Task[]>;
-}
-
-const WeekStrip: React.FC<WeekStripProps> = ({
-  selected,
-  onSelect,
-  tasksByDay,
-}) => {
-  const weekStart = startOfWeek(selected, { weekStartsOn: 1 });
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+const DayHeader: React.FC<{ date: Date }> = ({ date }) => {
+  const label = relativeDayLabel(date);
+  const sub = format(date, 'EEE d MMM');
+  const today = isToday(date);
 
   return (
-    <View style={{ marginBottom: spacing.xl }}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.weekScroll}
-      >
-        {days.map((day) => {
-          const active = isSameDay(day, selected);
-          const count = (tasksByDay.get(format(day, 'yyyy-MM-dd')) ?? []).length;
-          return (
-            <Pressable
-              key={day.toISOString()}
-              onPress={() => onSelect(day)}
-              style={[styles.weekCell, active && styles.weekCellActive]}
-            >
-              <Text
-                variant="caption"
-                color={active ? colors.textInverse : colors.textSecondary}
-              >
-                {format(day, 'EEE').toUpperCase()}
-              </Text>
-              <Text
-                variant="title2"
-                color={active ? colors.textInverse : colors.text}
-                style={{ marginTop: spacing.xs }}
-              >
-                {format(day, 'd')}
-              </Text>
-              <View
-                style={[
-                  styles.weekDot,
-                  {
-                    backgroundColor:
-                      count > 0
-                        ? active
-                          ? colors.textInverse
-                          : colors.text
-                        : 'transparent',
-                  },
-                ]}
-              />
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+    <View style={styles.dayHeader}>
+      <View style={styles.dayHeaderLeft}>
+        <Text variant="title3" color={today ? colors.accent : colors.text}>
+          {label}
+        </Text>
+        <Text variant="footnote" style={{ marginLeft: spacing.sm }}>
+          {sub}
+        </Text>
+      </View>
+      {today && <View style={styles.todayDot} />}
     </View>
   );
 };
 
-const CELL_SIZE = 38;
+/* -------------------------------------------------------------------------
+ * Single agenda row
+ * -------------------------------------------------------------------------
+ */
+
+interface RowProps {
+  task: Task;
+  accentColor: string;
+}
+
+const AgendaRow: React.FC<RowProps> = ({ task, accentColor }) => {
+  const done = task.status === 'done';
+  const time = rowTime(task);
+
+  return (
+    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+      <View style={styles.rowTime}>
+        <Text
+          variant="footnote"
+          weight="600"
+          color={done ? colors.textTertiary : colors.textSecondary}
+        >
+          {time}
+        </Text>
+      </View>
+      <Text
+        variant="callout"
+        weight="500"
+        color={done ? colors.textTertiary : colors.text}
+        style={[styles.rowTitle, done && styles.rowTitleDone]}
+        numberOfLines={1}
+      >
+        {task.title}
+      </Text>
+      <View style={[styles.rowDot, { backgroundColor: accentColor }]} />
+    </Pressable>
+  );
+};
+
+/* -------------------------------------------------------------------------
+ * Empty state
+ * -------------------------------------------------------------------------
+ */
+
+const EmptyState: React.FC<{ onAsk: () => void }> = ({ onAsk }) => (
+  <View style={styles.empty}>
+    <Text variant="title2">Nothing on the horizon.</Text>
+    <Text variant="subhead" style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+      When you tell the owl about a deadline, it'll land here automatically.
+    </Text>
+    <Pressable onPress={onAsk} style={styles.emptyCta}>
+      <Text variant="headline" color={colors.textInverse}>
+        Ask the owl
+      </Text>
+    </Pressable>
+  </View>
+);
+
+/* -------------------------------------------------------------------------
+ * Helpers
+ * -------------------------------------------------------------------------
+ */
+
+interface AgendaSection {
+  isoDate: string;
+  data: Task[];
+}
+
+function buildAgenda(tasks: Task[]): AgendaSection[] {
+  const map = new Map<string, Task[]>();
+
+  for (const t of tasks) {
+    const when = t.startAt ?? t.dueAt;
+    if (!when) continue;
+    const key = format(startOfDay(parseISO(when)), 'yyyy-MM-dd');
+    const list = map.get(key) ?? [];
+    list.push(t);
+    map.set(key, list);
+  }
+
+  // Sort keys ascending, then sort tasks within each day by time.
+  return Array.from(map.entries())
+    .map<AgendaSection>(([isoDate, list]) => ({
+      isoDate: parseISO(`${isoDate}T00:00:00`).toISOString(),
+      data: list.sort((a, b) => timeOf(a) - timeOf(b)),
+    }))
+    .sort((a, b) => a.isoDate.localeCompare(b.isoDate));
+}
+
+function timeOf(t: Task): number {
+  const when = t.startAt ?? t.dueAt;
+  return when ? new Date(when).getTime() : 0;
+}
+
+function rowTime(t: Task): string {
+  if (t.startAt && t.endAt) {
+    return `${clock(t.startAt)}–${clock(t.endAt)}`;
+  }
+  if (t.startAt) return clock(t.startAt);
+  if (t.dueAt) return clock(t.dueAt);
+  return '·';
+}
+
+function clock(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function relativeDayLabel(date: Date): string {
+  if (isToday(date)) return 'Today';
+  if (isTomorrow(date)) return 'Tomorrow';
+  if (isYesterday(date)) return 'Yesterday';
+  const sevenDays = addDays(new Date(), 7);
+  if (date.getTime() < sevenDays.getTime()) {
+    return format(date, 'EEEE');
+  }
+  return format(date, 'EEE');
+}
+
+/* -------------------------------------------------------------------------
+ * Styles
+ * -------------------------------------------------------------------------
+ */
 
 const styles = StyleSheet.create({
   header: {
@@ -311,114 +273,90 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
-  chevBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ rotate: '180deg' }],
-  },
-  toggle: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    padding: 3,
-  },
-  togglePill: {
+  todayPill: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    minWidth: 32,
-    alignItems: 'center',
-  },
-  togglePillActive: {
-    backgroundColor: colors.surfaceInverse,
-  },
-
-  // Month grid
-  weekRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-    paddingHorizontal: 2,
-  },
-  weekday: {
-    width: `${100 / 7}%`,
-    textAlign: 'center',
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  dayCell: {
-    width: `${100 / 7}%`,
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  dayInner: {
-    width: CELL_SIZE,
-    height: CELL_SIZE,
-    borderRadius: CELL_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayInnerActive: {
-    backgroundColor: colors.surfaceInverse,
-  },
-  barStack: {
-    width: '80%',
-    gap: 2,
-    marginTop: 4,
-    minHeight: 10,
-  },
-  dayBar: {
-    height: 3,
-    borderRadius: 2,
-  },
-
-  // Week strip
-  weekScroll: {
-    gap: spacing.sm,
-    paddingHorizontal: 2,
     paddingVertical: spacing.xs,
-  },
-  weekCell: {
-    width: 56,
-    height: 84,
-    borderRadius: radius.lg,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-  },
-  weekCellActive: {
-    backgroundColor: colors.surfaceInverse,
-    borderColor: colors.surfaceInverse,
-  },
-  weekDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: spacing.xs,
   },
 
-  selectedHead: {
+  dayHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: spacing.md,
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
   },
-  selectedStack: {
+  dayHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  todayDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+  },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
     gap: spacing.md,
   },
+  rowPressed: {
+    opacity: 0.6,
+  },
+  rowTime: {
+    width: 64,
+  },
+  rowTitle: {
+    flex: 1,
+  },
+  rowTitleDone: {
+    textDecorationLine: 'line-through',
+  },
+  rowDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.divider,
+  },
+
   empty: {
-    paddingVertical: spacing.xl,
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  emptyCta: {
+    marginTop: spacing.xl,
+    backgroundColor: colors.surfaceInverse,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+  },
+
+  askBar: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceInverse,
+    shadowColor: '#0C0C0E',
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
 });
