@@ -1,6 +1,7 @@
 import {
   addDays,
   addHours,
+  addYears,
   endOfDay,
   nextFriday,
   nextMonday,
@@ -9,6 +10,8 @@ import {
   nextThursday,
   nextTuesday,
   nextWednesday,
+  setDate,
+  setMonth,
   startOfDay,
 } from 'date-fns';
 
@@ -18,6 +21,7 @@ import type {
   Priority,
   Recurrence,
   Task,
+  TaskContext,
   TaskSlot,
   Weekday,
 } from '@/types';
@@ -123,19 +127,66 @@ export async function handleUserTurn(
 }
 
 /* -------------------------------------------------------------------------
+ * Context detection — different kinds of tasks need different questions
+ * -------------------------------------------------------------------------
+ */
+
+function detectContext(text: string): TaskContext {
+  const lower = text.toLowerCase();
+  if (
+    /\b(work|job|project|client|brief|office|boss|manager|deadline|site|quote|invoice|meeting|contract|stakeholder|deliverable)\b/.test(
+      lower,
+    )
+  ) {
+    return 'work';
+  }
+  if (/\b(gym|workout|run|yoga|swim|cycle|bike|lift|pilates|training)\b/.test(lower)) {
+    return 'fitness';
+  }
+  if (
+    /\b(grocer|shopping|store|pick up|errand|dry clean|post office|bank)\b/.test(
+      lower,
+    )
+  ) {
+    return 'errands';
+  }
+  if (
+    /\b(dinner|drinks|party|date night|birthday|brunch|lunch with|see the)\b/.test(
+      lower,
+    )
+  ) {
+    return 'social';
+  }
+  return 'personal';
+}
+
+/**
+ * Which slots to ask about, in order, for a given context. Work gets
+ * the full interrogation (manager, deliverables, estimate); a gym
+ * session just needs title + when.
+ */
+function slotsForContext(context: TaskContext): TaskSlot[] {
+  switch (context) {
+    case 'work':
+      return ['title', 'dueAt', 'estimatedMinutes', 'manager', 'deliverables'];
+    case 'fitness':
+      return ['title', 'dueAt', 'estimatedMinutes'];
+    case 'errands':
+      return ['title', 'dueAt'];
+    case 'social':
+      return ['title', 'dueAt', 'manager']; // "who with?"
+    default:
+      return ['title', 'dueAt'];
+  }
+}
+
+/* -------------------------------------------------------------------------
  * Slot-filling state machine
  * -------------------------------------------------------------------------
  */
 
-const FULL_SLOT_ORDER: TaskSlot[] = [
-  'title',
-  'dueAt',
-  'estimatedMinutes',
-  'manager',
-  'deliverables',
-];
-
 function startNewTaskIntent(text: string): AssistantResponse {
+  const context = detectContext(text);
   // Seed the draft with whatever we can already extract from the opener.
   const seed = extractDrafts(text)[0];
   const draft: Partial<Task> = seed
@@ -144,11 +195,18 @@ function startNewTaskIntent(text: string): AssistantResponse {
         dueAt: seed.dueAt,
         priority: seed.priority,
         estimatedMinutes: seed.estimatedMinutes,
+        context,
       }
-    : { priority: 'medium' };
+    : { priority: 'medium', context };
 
-  // Ask for the first missing slot.
-  const pending = FULL_SLOT_ORDER.filter((s) => isSlotMissing(draft, s));
+  // If the "title" we inferred is just the opener ("new job work") —
+  // drop it so we ask the user for a real name.
+  if (draft.title && isJunkTitle(draft.title)) {
+    delete draft.title;
+  }
+
+  // Context-aware slot order — e.g. fitness skips manager/deliverables.
+  const pending = slotsForContext(context).filter((s) => isSlotMissing(draft, s));
   const current = pending.shift() ?? null;
 
   if (!current) {
@@ -157,16 +215,29 @@ function startNewTaskIntent(text: string): AssistantResponse {
   }
 
   return {
-    reply: questionFor(current, draft),
-    suggestions: suggestionsFor(current),
+    reply: questionFor(current, draft, context),
+    suggestions: suggestionsFor(current, context),
     mood: 'thinking',
     nextIntent: {
       kind: 'new-task',
+      context,
       draft,
       pending,
       currentSlot: current,
     },
   };
+}
+
+// "new job work", "new task", "gotta do a thing" — these read like openers,
+// not task names. When the parser picks them up we discard them so the
+// slot-filler prompts for a real name.
+function isJunkTitle(title: string): boolean {
+  const lower = title.toLowerCase().trim();
+  return (
+    /^(new )?(job|task|project|thing|brief|work|item)s?$/.test(lower) ||
+    /^(a|an|some) (new )?(job|task|project|thing|brief|work|item)s?$/.test(lower) ||
+    lower.length < 4
+  );
 }
 
 function continuePendingIntent(
@@ -182,6 +253,7 @@ function continuePendingIntent(
     };
   }
 
+  const context: TaskContext = pending.context ?? 'personal';
   const draft = { ...pending.draft };
 
   // Fill the current slot with whatever the user said.
@@ -204,11 +276,12 @@ function continuePendingIntent(
   // If we're into the optional slots, let the user know they can skip.
   if (next && isOptional(next)) {
     return {
-      reply: questionFor(next, draft),
-      suggestions: [...suggestionsFor(next), 'Skip'],
+      reply: questionFor(next, draft, context),
+      suggestions: [...suggestionsFor(next, context), 'Skip'],
       mood: 'thinking',
       nextIntent: {
         kind: pending.kind,
+        context,
         draft,
         pending: remaining,
         currentSlot: next,
@@ -221,11 +294,12 @@ function continuePendingIntent(
   }
 
   return {
-    reply: questionFor(next, draft),
-    suggestions: suggestionsFor(next),
+    reply: questionFor(next, draft, context),
+    suggestions: suggestionsFor(next, context),
     mood: 'thinking',
     nextIntent: {
       kind: pending.kind,
+      context,
       draft,
       pending: remaining,
       currentSlot: next,
@@ -262,6 +336,8 @@ function isSlotMissing(draft: Partial<Task>, slot: TaskSlot): boolean {
       return !draft.manager;
     case 'deliverables':
       return !draft.deliverables;
+    case 'who':
+      return false; // handled separately — not asked in the main flow
   }
 }
 
@@ -307,35 +383,92 @@ function applySlotAnswer(
   }
 }
 
-function questionFor(slot: TaskSlot, draft: Partial<Task>): string {
+/**
+ * Question phrasing adapts to the context — a work task gets asked
+ * differently to a gym session. The goal is to sound like a
+ * colleague who's paying attention, not a form.
+ */
+function questionFor(
+  slot: TaskSlot,
+  draft: Partial<Task>,
+  context: TaskContext,
+): string {
   switch (slot) {
     case 'title':
-      return "What's the task — one line is fine.";
+      switch (context) {
+        case 'work':
+          return draft.dueAt
+            ? `What's the name of the task that's due for work?`
+            : `What's the name of the task? (so I know what to call it in your work list)`;
+        case 'fitness':
+          return 'What kind of workout?';
+        case 'errands':
+          return 'What do you need to pick up?';
+        case 'social':
+          return "What's the plan?";
+        default:
+          return "What would you like to call it?";
+      }
+
     case 'dueAt':
-      return draft.title
-        ? `When does "${draft.title}" need to be done?`
-        : 'When does it need to be done?';
+      switch (context) {
+        case 'work':
+          return draft.title
+            ? `When's "${draft.title}" due?`
+            : "What's the deadline?";
+        case 'fitness':
+          return 'When are you planning to do it?';
+        case 'errands':
+          return 'When do you need it done by?';
+        case 'social':
+          return "When is it?";
+        default:
+          return draft.title
+            ? `When does "${draft.title}" need to be done?`
+            : 'When does it need to be done?';
+      }
+
     case 'estimatedMinutes':
-      return 'Roughly how long do you think it\'ll take?';
+      switch (context) {
+        case 'work':
+          return 'Roughly how many hours of work is it?';
+        case 'fitness':
+          return 'How long will you spend on it?';
+        default:
+          return "Roughly how long do you think it'll take?";
+      }
+
     case 'manager':
-      return "Who's running it? (or skip)";
+      return context === 'social'
+        ? 'Who are you going with? (or skip)'
+        : "Who's running it? (or skip)";
+
     case 'deliverables':
-      return 'What are the deliverables? (or skip)';
+      return 'What do you need to hand over at the end? (or skip)';
+
+    case 'who':
+      return 'Whose task is this — yours or your partner\'s?';
   }
 }
 
-function suggestionsFor(slot: TaskSlot): string[] {
+function suggestionsFor(slot: TaskSlot, context: TaskContext): string[] {
   switch (slot) {
     case 'title':
       return [];
     case 'dueAt':
-      return ['Today', 'Tomorrow', 'Friday', 'Next week'];
+      return context === 'work'
+        ? ['Today', 'Tomorrow', 'This Friday', 'Next week']
+        : ['Today', 'Tomorrow', 'This weekend', 'Next week'];
     case 'estimatedMinutes':
-      return ['30 min', '1 hour', 'Half day', 'Full day'];
+      return context === 'work'
+        ? ['1 hour', 'Half day', 'Full day', '2 days']
+        : ['30 min', '1 hour', 'Half day', 'Full day'];
     case 'manager':
       return [];
     case 'deliverables':
       return [];
+    case 'who':
+      return ['Mine', "Partner's"];
   }
 }
 
@@ -401,10 +534,26 @@ function extractOneDraft(raw: string): ParsedTaskDraft {
   };
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  jan: 0, january: 0,
+  feb: 1, february: 1,
+  mar: 2, march: 2,
+  apr: 3, april: 3,
+  may: 4,
+  jun: 5, june: 5,
+  jul: 6, july: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9,
+  nov: 10, november: 10,
+  dec: 11, december: 11,
+};
+
 function extractDueDate(raw: string): string | null {
   const lower = raw.toLowerCase();
   const now = new Date();
 
+  // Relative words — fastest path.
   if (/\btonight\b/.test(lower)) return toISO(endOfDay(now));
   if (/\btoday\b/.test(lower)) return toISO(addHours(startOfDay(now), 17));
   if (/\btomorrow\b/.test(lower))
@@ -421,7 +570,58 @@ function extractDueDate(raw: string): string | null {
   const inDays = lower.match(/in (\d+) days?/);
   if (inDays) return toISO(addDays(now, parseInt(inDays[1], 10)));
 
+  // Ordinal + month name: "15th may" / "15 may"
+  const dayMonth = lower.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/,
+  );
+  if (dayMonth) {
+    const day = parseInt(dayMonth[1], 10);
+    const monthIdx = MONTH_NAMES[dayMonth[2]];
+    if (monthIdx != null) return toISO(dateOn(now, monthIdx, day, 9, 0));
+  }
+
+  // Month first: "may 15" / "may 15th"
+  const monthDay = lower.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?\b/,
+  );
+  if (monthDay) {
+    const monthIdx = MONTH_NAMES[monthDay[1]];
+    const day = parseInt(monthDay[2], 10);
+    if (monthIdx != null) return toISO(dateOn(now, monthIdx, day, 9, 0));
+  }
+
+  // Numeric DD/MM or DD-MM (UK default). Accepts optional year.
+  const numeric = lower.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (numeric) {
+    const day = parseInt(numeric[1], 10);
+    const month = parseInt(numeric[2], 10) - 1;
+    const yearStr = numeric[3];
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      let target = dateOn(now, month, day, 9, 0);
+      if (yearStr) {
+        const year = yearStr.length === 2 ? 2000 + parseInt(yearStr, 10) : parseInt(yearStr, 10);
+        target = new Date(target);
+        target.setFullYear(year);
+      }
+      return toISO(target);
+    }
+  }
+
   return null;
+}
+
+/**
+ * Builds a Date on the given month/day with time set, rolling forward
+ * to next year if the target would otherwise be in the past.
+ */
+function dateOn(now: Date, month: number, day: number, hour: number, minute: number): Date {
+  let d = setMonth(now, month);
+  d = setDate(d, day);
+  d.setHours(hour, minute, 0, 0);
+  if (d.getTime() < now.getTime() - 12 * 60 * 60 * 1000) {
+    d = addYears(d, 1);
+  }
+  return d;
 }
 
 function extractPriority(raw: string): Priority {
