@@ -1,5 +1,5 @@
 /**
- * Thin Claude API client — one POST to /v1/messages with tool use.
+ * Thin Google Gemini API client — one POST to generativelanguage with tool use.
  *
  * Used by the owl to actually converse, not just parse. When the API
  * key is missing we fall back to the local deterministic handler in
@@ -10,11 +10,11 @@
  * shared between one or two people — DO NOT publish the app as-is.
  */
 
-const ENDPOINT = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-5';
+const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const MODEL = 'gemini-2.0-flash';
 const MAX_TOKENS = 800;
 
-const API_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
+const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY ?? '';
 
 export function hasApiKey(): boolean {
   return API_KEY.length > 0;
@@ -39,114 +39,117 @@ export interface ClaudeResult {
 /* -------------------------------------------------------------------------
  * Tools
  *
- * Claude calls these when it wants the app to do something. Our code
+ * Gemini calls these when it wants the app to do something. Our code
  * then executes them locally — creating tasks, scheduling recurrences,
  * offering follow-up chips.
  * -------------------------------------------------------------------------
  */
 
-const TOOLS = [
-  {
-    name: 'create_task',
-    description:
-      "Create a task for the user. Call this whenever they mention something they need to do, a deadline, or an appointment. Resolve all dates/times to ISO 8601 using the user's local timezone.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: {
-          type: 'string',
-          description: 'Short, specific task title. No filler words.',
-        },
-        dueAt: {
-          type: 'string',
-          description:
-            'ISO 8601 date-time the task is due by. Use this for deadlines.',
-        },
-        startAt: {
-          type: 'string',
-          description:
-            'ISO 8601 start time. Use this (with endAt) when the task runs over a time block, like an appointment or meeting.',
-        },
-        endAt: {
-          type: 'string',
-          description: 'ISO 8601 end time. Used with startAt.',
-        },
-        priority: {
-          type: 'string',
-          enum: ['low', 'medium', 'high'],
-          description: 'Default medium. Use high when the user sounds stressed or says urgent/ASAP/tight.',
-        },
-        estimatedMinutes: {
-          type: 'number',
-          description: 'Rough guess of how long it will take, in minutes.',
-        },
-        notes: {
-          type: 'string',
-          description:
-            "Extra context you've collected — manager name, deliverables, who's joining, etc.",
-        },
-        owner: {
-          type: 'string',
-          enum: ['me', 'partner'],
-          description:
-            "Whose task this is. Default 'me'. Switch to 'partner' if the user says their partner's name or 'she'/'he'/'they'.",
-        },
-      },
-      required: ['title'],
-    },
-  },
-  {
-    name: 'create_recurring_schedule',
-    description:
-      'Create a repeating weekly schedule — e.g. a work schedule, a gym routine, a class. Materializes as time-blocks on the calendar.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        days: {
-          type: 'array',
-          items: {
+const TOOLS = {
+  type: 'function',
+  function_declarations: [
+    {
+      name: 'create_task',
+      description:
+        "Create a task for the user. Call this whenever they mention something they need to do, a deadline, or an appointment. Resolve all dates/times to ISO 8601 using the user's local timezone.",
+      parameters: {
+        type: 'object',
+        properties: {
+          title: {
             type: 'string',
-            enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+            description: 'Short, specific task title. No filler words.',
+          },
+          dueAt: {
+            type: 'string',
+            description:
+              'ISO 8601 date-time the task is due by. Use this for deadlines.',
+          },
+          startAt: {
+            type: 'string',
+            description:
+              'ISO 8601 start time. Use this (with endAt) when the task runs over a time block, like an appointment or meeting.',
+          },
+          endAt: {
+            type: 'string',
+            description: 'ISO 8601 end time. Used with startAt.',
+          },
+          priority: {
+            type: 'string',
+            enum: ['low', 'medium', 'high'],
+            description: 'Default medium. Use high when the user sounds stressed or says urgent/ASAP/tight.',
+          },
+          estimatedMinutes: {
+            type: 'number',
+            description: 'Rough guess of how long it will take, in minutes.',
+          },
+          notes: {
+            type: 'string',
+            description:
+              "Extra context you've collected — manager name, deliverables, who's joining, etc.",
+          },
+          owner: {
+            type: 'string',
+            enum: ['me', 'partner'],
+            description:
+              "Whose task this is. Default 'me'. Switch to 'partner' if the user says their partner's name or 'she'/'he'/'they'.",
           },
         },
-        startTime: {
-          type: 'string',
-          description: '24-hour HH:MM start time, e.g. "09:00".',
-        },
-        endTime: {
-          type: 'string',
-          description: '24-hour HH:MM end time, e.g. "17:00".',
-        },
-        weeksAhead: {
-          type: 'number',
-          description: 'How many weeks forward to project. Default 4.',
-        },
-        owner: {
-          type: 'string',
-          enum: ['me', 'partner'],
-        },
+        required: ['title'],
       },
-      required: ['title', 'days', 'startTime', 'endTime'],
     },
-  },
-  {
-    name: 'suggest_replies',
-    description:
-      "Offer 2-4 short tap-to-reply chips. Use only when there's an obvious next step the user might want — skip it on routine acknowledgements.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        suggestions: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Short phrases, ideally <4 words each.',
+    {
+      name: 'create_recurring_schedule',
+      description:
+        'Create a repeating weekly schedule — e.g. a work schedule, a gym routine, a class. Materializes as time-blocks on the calendar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          days: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+            },
+          },
+          startTime: {
+            type: 'string',
+            description: '24-hour HH:MM start time, e.g. "09:00".',
+          },
+          endTime: {
+            type: 'string',
+            description: '24-hour HH:MM end time, e.g. "17:00".',
+          },
+          weeksAhead: {
+            type: 'number',
+            description: 'How many weeks forward to project. Default 4.',
+          },
+          owner: {
+            type: 'string',
+            enum: ['me', 'partner'],
+          },
         },
+        required: ['title', 'days', 'startTime', 'endTime'],
       },
-      required: ['suggestions'],
     },
-  },
-];
+    {
+      name: 'suggest_replies',
+      description:
+        "Offer 2-4 short tap-to-reply chips. Use only when there's an obvious next step the user might want — skip it on routine acknowledgements.",
+      parameters: {
+        type: 'object',
+        properties: {
+          suggestions: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Short phrases, ideally <4 words each.',
+          },
+        },
+        required: ['suggestions'],
+      },
+    },
+  ],
+};
 
 /* -------------------------------------------------------------------------
  * System prompt
@@ -230,45 +233,64 @@ export async function callClaude(args: {
     args.partnerName,
   );
 
-  const response = await fetch(ENDPOINT, {
+  // Convert messages to Google Gemini format
+  const contents = args.messages.map((msg) => ({
+    role: msg.role === 'user' ? 'user' : 'model',
+    parts: [{ text: msg.content }],
+  }));
+
+  const response = await fetch(`${ENDPOINT}?key=${API_KEY}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system,
-      messages: args.messages,
-      tools: TOOLS,
+      system_instruction: {
+        parts: [{ text: system }],
+      },
+      contents,
+      tools: [TOOLS],
+      generation_config: {
+        max_output_tokens: MAX_TOKENS,
+      },
     }),
   });
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
     throw new Error(
-      `Claude ${response.status}: ${errText.slice(0, 200) || response.statusText}`,
+      `Gemini ${response.status}: ${errText.slice(0, 200) || response.statusText}`,
     );
   }
 
   const data = (await response.json()) as {
-    content?: Array<
-      | { type: 'text'; text: string }
-      | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-    >;
+    candidates?: Array<{
+      content?: {
+        parts?: Array<
+          | { text?: string }
+          | { functionCall?: { name: string; args: Record<string, unknown> } }
+        >;
+      };
+    }>;
   };
 
   let text = '';
   const toolCalls: ToolCall[] = [];
 
-  for (const block of data.content ?? []) {
-    if (block.type === 'text') {
-      text += block.text;
-    } else if (block.type === 'tool_use') {
-      toolCalls.push({ name: block.name, id: block.id, input: block.input });
+  const candidate = data.candidates?.[0];
+  const parts = candidate?.content?.parts ?? [];
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if ('text' in part && part.text) {
+      text += part.text;
+    } else if ('functionCall' in part && part.functionCall) {
+      const fc = part.functionCall;
+      toolCalls.push({
+        name: fc.name,
+        id: `call_${i}`,
+        input: fc.args,
+      });
     }
   }
 
