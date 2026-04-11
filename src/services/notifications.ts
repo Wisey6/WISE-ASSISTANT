@@ -12,7 +12,6 @@ import * as Notifications from 'expo-notifications';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
     shouldPlaySound: false,
     shouldSetBadge: true,
     shouldShowBanner: true,
@@ -38,13 +37,11 @@ export async function scheduleMorningBriefing(body: string): Promise<void> {
       body,
       sound: false,
     },
-    // Daily 7 AM repeat — simplest trigger shape that works across
-    // recent expo-notifications versions.
     trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
       hour: 7,
       minute: 0,
-      repeats: true,
-    } as Notifications.NotificationTriggerInput,
+    },
   });
 }
 
@@ -53,14 +50,17 @@ export async function scheduleTaskReminder(args: {
   title: string;
   dueAt: string;
 }): Promise<void> {
-  const trigger = new Date(args.dueAt);
+  const fireAt = new Date(args.dueAt);
   // Remind 30 minutes before the deadline.
-  trigger.setMinutes(trigger.getMinutes() - 30);
-  if (trigger.getTime() < Date.now()) return;
+  fireAt.setMinutes(fireAt.getMinutes() - 30);
+  if (fireAt.getTime() < Date.now()) return;
 
   await Notifications.scheduleNotificationAsync({
     identifier: args.id,
     content: { title: 'Heads up', body: args.title },
-    trigger: { date: trigger } as Notifications.NotificationTriggerInput,
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: fireAt,
+    },
   });
 }

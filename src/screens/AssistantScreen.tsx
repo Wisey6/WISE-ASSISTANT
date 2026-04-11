@@ -86,7 +86,7 @@ export const AssistantScreen: React.FC = () => {
   );
 
   const handleVoice = useCallback(() => {
-    // Placeholder for real expo-av recording.
+    // Placeholder for real expo-audio recording.
     // Kept intentionally simple — we just toggle the owl's listening
     // state so the animation demos correctly. Real recording goes
     // here when we wire up a speech-to-text service.

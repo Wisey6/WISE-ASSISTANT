@@ -12,8 +12,9 @@ module.exports = function (api) {
           },
         },
       ],
-      // react-native-reanimated/plugin must be listed last.
-      'react-native-reanimated/plugin',
+      // react-native-worklets/plugin replaces react-native-reanimated/plugin
+      // in Reanimated 4 (Expo SDK 54). Must be listed last.
+      'react-native-worklets/plugin',
     ],
   };
 };

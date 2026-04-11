@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Audio } from 'expo-av';
+import { requestRecordingPermissionsAsync } from 'expo-audio';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { Button, Card, Icon, Screen, Text } from '@/components';
@@ -27,7 +27,7 @@ export const PermissionsScreen: React.FC<Props> = () => {
   };
 
   const requestMic = async () => {
-    const { granted } = await Audio.requestPermissionsAsync();
+    const { granted } = await requestRecordingPermissionsAsync();
     setMicGranted(granted);
   };
 
