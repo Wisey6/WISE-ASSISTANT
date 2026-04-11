@@ -16,6 +16,7 @@ import {
 } from 'date-fns';
 
 import type {
+  AssistantMessage,
   ParsedTaskDraft,
   PendingIntent,
   Priority,
@@ -26,6 +27,7 @@ import type {
   Weekday,
 } from '@/types';
 import { toISO } from '@/utils/date';
+import { callClaude, hasApiKey, type ClaudeMessage } from './claude';
 
 /**
  * -----------------------------------------------------------------------
@@ -65,13 +67,52 @@ export interface AssistantResponse {
   overloaded?: boolean;
   /** How the owl should feel while "speaking". */
   mood?: 'idle' | 'talking' | 'thinking' | 'happy';
+  /** Which owner the new tasks/recurrence should be attributed to. */
+  ownerHint?: 'me' | 'partner';
 }
 
 /**
  * The entry point the assistant screen calls on every user turn.
- * Pass the user's raw text plus the current pending intent (if any).
+ *
+ * When EXPO_PUBLIC_ANTHROPIC_API_KEY is set we route through Claude
+ * (real conversation, real reasoning, tool calls for task/schedule
+ * creation). Otherwise we fall back to the local deterministic
+ * slot-filler so the app still works offline / unconfigured.
+ *
+ * @param input     The new user turn.
+ * @param history   Full prior conversation from the assistant store
+ *                  — used as context for Claude. Can be empty for
+ *                  offline-only mode.
+ * @param pending   Local slot-fill state. Only used by the fallback
+ *                  path; Claude handles its own follow-ups.
  */
 export async function handleUserTurn(
+  input: string,
+  history: AssistantMessage[],
+  pending: PendingIntent | null,
+): Promise<AssistantResponse> {
+  if (hasApiKey()) {
+    try {
+      return await handleTurnWithClaude(input, history);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[ai] Claude call failed, falling back:', msg);
+      return {
+        reply:
+          "I'm having trouble reaching my brain — falling back to my simpler parser for this one.",
+        mood: 'idle',
+        ...(await handleTurnLocally(input, pending)),
+      };
+    }
+  }
+  return handleTurnLocally(input, pending);
+}
+
+/**
+ * Local, deterministic, regex-based fallback. This used to be the
+ * main handler — it still is when no API key is configured.
+ */
+async function handleTurnLocally(
   input: string,
   pending: PendingIntent | null,
 ): Promise<AssistantResponse> {
@@ -123,6 +164,117 @@ export async function handleUserTurn(
     suggestions: overloaded
       ? ['Move low-priority to next week', 'Leave it', 'Anything else?']
       : ['Add another', 'Set a reminder', 'Thanks'],
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * Remote (Claude) turn handler
+ *
+ * Sends the full conversation to Claude with a system prompt and a
+ * small set of tools (create_task, create_recurring_schedule,
+ * suggest_replies). Claude does its own conversation + follow-ups,
+ * and the tool calls are translated into the same AssistantResponse
+ * shape the rest of the app already speaks.
+ * -------------------------------------------------------------------------
+ */
+
+async function handleTurnWithClaude(
+  input: string,
+  history: AssistantMessage[],
+): Promise<AssistantResponse> {
+  const text = input.trim();
+  if (!text) {
+    return { reply: "I didn't catch that — try again?", mood: 'idle' };
+  }
+
+  // Build the message list Claude expects. Keep the last ~20 turns
+  // for context — beyond that the cost climbs and the owl starts
+  // repeating itself.
+  const recent = history.slice(-20);
+  const messages: ClaudeMessage[] = recent
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({ role: m.role, content: m.text }));
+
+  // If the last message in history isn't already this turn (edge
+  // case: caller forgot to append), add it so Claude sees the input.
+  if (
+    messages.length === 0 ||
+    messages[messages.length - 1].role !== 'user' ||
+    messages[messages.length - 1].content !== text
+  ) {
+    messages.push({ role: 'user', content: text });
+  }
+
+  const result = await callClaude({
+    messages,
+    userName: 'Sarah',
+    partnerName: 'Jamie',
+  });
+
+  const tasks: ParsedTaskDraft[] = [];
+  let recurrence: Recurrence | undefined;
+  let suggestions: string[] | undefined;
+  let partnerOwned = false;
+
+  for (const call of result.toolCalls) {
+    if (call.name === 'create_task') {
+      const t = call.input as {
+        title?: string;
+        dueAt?: string;
+        startAt?: string;
+        endAt?: string;
+        priority?: Priority;
+        estimatedMinutes?: number;
+        notes?: string;
+        owner?: 'me' | 'partner';
+      };
+      tasks.push({
+        title: t.title ?? 'Untitled',
+        dueAt: t.dueAt ?? null,
+        startAt: t.startAt ?? null,
+        endAt: t.endAt ?? null,
+        priority: t.priority ?? 'medium',
+        estimatedMinutes: t.estimatedMinutes,
+        notes: t.notes,
+      });
+      if (t.owner === 'partner') partnerOwned = true;
+    } else if (call.name === 'create_recurring_schedule') {
+      const r = call.input as {
+        title?: string;
+        days?: Weekday[];
+        startTime?: string;
+        endTime?: string;
+        weeksAhead?: number;
+      };
+      if (r.days && r.startTime && r.endTime) {
+        recurrence = {
+          days: r.days,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          weeksAhead: r.weeksAhead ?? 4,
+        };
+      }
+    } else if (call.name === 'suggest_replies') {
+      const s = call.input as { suggestions?: string[] };
+      if (Array.isArray(s.suggestions) && s.suggestions.length > 0) {
+        suggestions = s.suggestions.slice(0, 5);
+      }
+    }
+  }
+
+  const createdSomething = tasks.length > 0 || !!recurrence;
+
+  return {
+    reply: result.text || (createdSomething ? 'Done.' : 'Hm, say that again?'),
+    tasks: tasks.length > 0 ? tasks : undefined,
+    recurrence,
+    suggestions,
+    mood: createdSomething ? 'happy' : 'idle',
+    nextIntent: null, // Claude handles follow-ups naturally in conversation
+    // Partner ownership is surfaced via a flag for the caller to use;
+    // the store's addTasksFromDrafts takes an explicit ownerId so the
+    // screen picks between 'me' and the partner id based on this.
+    ownerHint: partnerOwned ? 'partner' : 'me',
   };
 }
 

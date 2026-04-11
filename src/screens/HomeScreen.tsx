@@ -93,19 +93,27 @@ export const HomeScreen: React.FC = () => {
       // Yield to the UI so the user bubble appears before "thinking".
       await new Promise((r) => setTimeout(r, 320));
 
-      const response = await handleUserTurn(text, pendingIntent);
+      // Grab the latest history from the store (so the new user
+      // message is included) — Claude needs the full conversation.
+      const latestHistory = useAssistantStore.getState().messages;
+      const response = await handleUserTurn(text, latestHistory, pendingIntent);
+
+      // Figure out which owner id to attribute new tasks to. Default
+      // is the user; Claude can hint at "partner" via ownerHint.
+      const partnerId = usePartnersStore.getState().partners[0]?.id ?? 'me';
+      const targetOwner = response.ownerHint === 'partner' ? partnerId : 'me';
 
       let createdIds: string[] = [];
 
       if (response.tasks && response.tasks.length > 0) {
-        const created = addTasksFromDrafts(response.tasks, 'me');
+        const created = addTasksFromDrafts(response.tasks, targetOwner);
         createdIds = created.map((t) => t.id);
       }
 
       if (response.recurrence) {
         const created = addRecurringSchedule(response.recurrence, {
-          title: 'Work',
-          ownerId: 'me',
+          title: response.tasks?.[0]?.title ?? 'Work',
+          ownerId: targetOwner,
           color: meColor,
         });
         createdIds.push(...created.map((t) => t.id));
