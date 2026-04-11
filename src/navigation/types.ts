@@ -8,10 +8,10 @@ export type OnboardingStackParamList = {
 };
 
 export type MainTabParamList = {
-  Dashboard: undefined;
+  Home: undefined;
   Tasks: undefined;
-  Assistant: undefined;
   Calendar: undefined;
+  Profile: undefined;
 };
 
 export type RootStackParamList = {

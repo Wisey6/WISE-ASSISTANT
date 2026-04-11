@@ -1,210 +1,231 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
-  Card,
-  Icon,
-  Screen,
-  SwipeableTaskRow,
-  Text,
-} from '@/components';
+  addDays,
+  format,
+  isSameDay,
+  isToday,
+  startOfDay,
+} from 'date-fns';
+
+import { Icon, Screen, TaskCard, Text } from '@/components';
 import { colors, radius, spacing } from '@/theme';
 import { useTaskStore } from '@/store/useTaskStore';
-import { useTaskInsights } from '@/hooks/useTaskInsights';
+import { usePartnersStore } from '@/store/usePartnersStore';
+import { useUserStore } from '@/store/useUserStore';
 import type { Task } from '@/types';
 
-type Filter = 'today' | 'upcoming' | 'done';
+type Filter = 'mine' | 'partner' | 'all';
 
 /**
- * Full task list. Three segmented filters, grouped rows, swipe to
- * complete or delete. The insights card at the top surfaces the same
- * overload warning the AI uses so the user sees it in context.
+ * Tasks — the list-of-cards view. Header shows a scrollable week
+ * strip (the reference style), then a filter row (mine / partner /
+ * all), then the stacked black task cards.
  */
 export const TasksScreen: React.FC = () => {
   const tasks = useTaskStore((s) => s.tasks);
   const toggleTask = useTaskStore((s) => s.toggleTask);
-  const removeTask = useTaskStore((s) => s.removeTask);
-  const insights = useTaskInsights();
+  const partners = usePartnersStore((s) => s.partners);
+  const colorFor = usePartnersStore((s) => s.colorFor);
+  const user = useUserStore((s) => s.user);
 
-  const [filter, setFilter] = useState<Filter>('today');
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [filter, setFilter] = useState<Filter>('all');
 
-  const visible = useMemo(() => {
-    const today = new Date();
-    const isSameDay = (iso: string | null) =>
-      iso !== null && new Date(iso).toDateString() === today.toDateString();
+  const weekStrip = useMemo(() => {
+    const today = startOfDay(new Date());
+    return Array.from({ length: 7 }, (_, i) => addDays(today, i));
+  }, []);
 
-    switch (filter) {
-      case 'today':
-        return tasks.filter(
-          (t) => t.status === 'todo' && (isSameDay(t.dueAt) || !t.dueAt),
-        );
-      case 'upcoming':
-        return tasks.filter(
-          (t) =>
-            t.status === 'todo' &&
-            t.dueAt !== null &&
-            !isSameDay(t.dueAt) &&
-            new Date(t.dueAt).getTime() > today.getTime(),
-        );
-      case 'done':
-        return tasks.filter((t) => t.status === 'done');
-    }
-  }, [tasks, filter]);
+  const dayTasks = useMemo(() => {
+    const relevant = tasks.filter((t) => {
+      const when = t.startAt ?? t.dueAt;
+      if (!when) return false;
+      return isSameDay(new Date(when), selectedDate);
+    });
+
+    const filtered = relevant.filter((t) => {
+      if (filter === 'mine') return t.ownerId === 'me';
+      if (filter === 'partner') return t.ownerId !== 'me';
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      const aw = new Date(a.startAt ?? a.dueAt ?? 0).getTime();
+      const bw = new Date(b.startAt ?? b.dueAt ?? 0).getTime();
+      return aw - bw;
+    });
+  }, [tasks, selectedDate, filter]);
+
+  const partnerName = partners[0]?.name;
 
   return (
     <Screen scroll>
+      {/* Large "Monday, 5" header */}
       <View style={styles.header}>
-        <Text variant="largeTitle">Tasks</Text>
-        <Text variant="subhead">
-          {insights.remaining} open · {insights.completed} done
-        </Text>
+        <View>
+          <Text variant="largeTitle">{format(selectedDate, 'EEEE, d')}</Text>
+          <Text variant="subhead" style={{ marginTop: 2 }}>
+            {dayTasks.length === 0
+              ? 'Nothing scheduled'
+              : `${dayTasks.length} ${dayTasks.length === 1 ? 'thing' : 'things'} today`}
+          </Text>
+        </View>
+        <View style={styles.headerChevron}>
+          <Icon name="chevronRight" size={22} color={colors.text} />
+        </View>
       </View>
 
-      {insights.overloaded && (
-        <Card style={styles.warningCard}>
-          <View style={styles.warningIcon}>
-            <Icon name="flame" size={18} color={colors.accent} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text variant="headline">Heavy day ahead</Text>
-            <Text variant="subhead" style={{ marginTop: 2 }}>
-              Consider moving lower-priority items to later this week.
-            </Text>
-          </View>
-        </Card>
-      )}
-
-      <Segmented
-        value={filter}
-        onChange={setFilter}
-        options={[
-          { value: 'today', label: 'Today' },
-          { value: 'upcoming', label: 'Upcoming' },
-          { value: 'done', label: 'Done' },
-        ]}
-      />
-
-      <Card padded={false} style={styles.listCard}>
-        {visible.length === 0 ? (
-          <View style={styles.empty}>
-            <Text variant="headline">Nothing here</Text>
-            <Text variant="subhead" style={{ marginTop: 4 }}>
-              {filter === 'done'
-                ? "You haven't completed anything yet."
-                : 'Enjoy the breathing room.'}
-            </Text>
-          </View>
-        ) : (
-          visible.map((task, idx) => (
-            <View
-              key={task.id}
-              style={[
-                idx > 0 && {
-                  borderTopWidth: StyleSheet.hairlineWidth,
-                  borderTopColor: colors.divider,
-                },
-              ]}
+      {/* Week strip */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.weekStrip}
+      >
+        {weekStrip.map((day) => {
+          const active = isSameDay(day, selectedDate);
+          return (
+            <Pressable
+              key={day.toISOString()}
+              onPress={() => setSelectedDate(day)}
+              style={[styles.dayPill, active && styles.dayPillActive]}
             >
-              <SwipeableTaskRow
-                task={task}
-                onToggle={toggleTask}
-                onRemove={removeTask}
-              />
-            </View>
+              <Text
+                variant="caption"
+                color={active ? colors.textInverse : colors.textSecondary}
+              >
+                {format(day, 'EEE').toUpperCase()}
+              </Text>
+              <Text
+                variant="title3"
+                color={active ? colors.textInverse : colors.text}
+                style={{ marginTop: 2 }}
+              >
+                {format(day, 'd')}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {/* Filter row */}
+      <View style={styles.filters}>
+        {([
+          { value: 'all' as const, label: 'Everyone' },
+          { value: 'mine' as const, label: user?.name ?? 'Me' },
+          { value: 'partner' as const, label: partnerName ?? 'Partner' },
+        ]).map((opt) => {
+          const active = opt.value === filter;
+          return (
+            <Pressable
+              key={opt.value}
+              onPress={() => setFilter(opt.value)}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+            >
+              <Text
+                variant="footnote"
+                weight={active ? '600' : '500'}
+                color={active ? colors.textInverse : colors.textSecondary}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Task cards */}
+      <View style={styles.cardStack}>
+        {dayTasks.length === 0 ? (
+          <EmptyCard isToday={isToday(selectedDate)} />
+        ) : (
+          dayTasks.map((t) => (
+            <TaskCard
+              key={t.id}
+              task={t}
+              accentColor={t.color ?? colorFor(t.ownerId)}
+              ownerLabel={
+                t.ownerId === 'me'
+                  ? user?.name ?? 'Me'
+                  : partners.find((p) => p.id === t.ownerId)?.name ?? 'Partner'
+              }
+              onToggle={toggleTask}
+            />
           ))
         )}
-      </Card>
+      </View>
     </Screen>
   );
 };
 
-interface SegmentedProps<T extends string> {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-}
-
-function Segmented<T extends string>({
-  value,
-  onChange,
-  options,
-}: SegmentedProps<T>) {
-  return (
-    <View style={styles.segmented}>
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <Pressable
-            key={opt.value}
-            style={[styles.segment, active && styles.segmentActive]}
-            onPress={() => onChange(opt.value)}
-          >
-            <Text
-              variant="footnote"
-              weight={active ? '600' : '500'}
-              color={active ? colors.text : colors.textSecondary}
-            >
-              {opt.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-// Exported so tests or other screens can sort/filter with the same type.
-export type { Task };
+const EmptyCard: React.FC<{ isToday: boolean }> = ({ isToday }) => (
+  <View style={styles.empty}>
+    <Text variant="headline">
+      {isToday ? "You're clear today" : 'Nothing scheduled'}
+    </Text>
+    <Text variant="subhead" style={{ marginTop: 4 }}>
+      Tell the owl what you've got — it'll sort the rest.
+    </Text>
+  </View>
+);
 
 const styles = StyleSheet.create({
   header: {
-    gap: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: spacing.lg,
   },
-  warningCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-    backgroundColor: colors.accentSoft,
-    borderColor: 'transparent',
-  },
-  warningIcon: {
+  headerChevron: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  segmented: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    padding: 4,
-    marginBottom: spacing.md,
+  weekStrip: {
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: 2,
+    marginBottom: spacing.lg,
   },
-  segment: {
-    flex: 1,
+  dayPill: {
+    width: 52,
+    height: 64,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayPillActive: {
+    backgroundColor: colors.surfaceInverse,
+    borderColor: colors.surfaceInverse,
+  },
+  filters: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
-    alignItems: 'center',
-  },
-  segmentActive: {
     backgroundColor: colors.surface,
-    shadowColor: '#111113',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  listCard: {
-    paddingHorizontal: 0,
-    overflow: 'hidden',
+  filterChipActive: {
+    backgroundColor: colors.surfaceInverse,
+    borderColor: colors.surfaceInverse,
+  },
+  cardStack: {
+    gap: spacing.md,
   },
   empty: {
     paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
 });

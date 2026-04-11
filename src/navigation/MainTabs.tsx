@@ -1,93 +1,162 @@
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
-import { colors, radius, spacing } from '@/theme';
-import { DashboardScreen } from '@/screens/DashboardScreen';
+import { colors, radius, shadows, spacing } from '@/theme';
+import { HomeScreen } from '@/screens/HomeScreen';
 import { TasksScreen } from '@/screens/TasksScreen';
-import { AssistantScreen } from '@/screens/AssistantScreen';
 import { CalendarScreen } from '@/screens/CalendarScreen';
-import { TabIcon, type IconName } from '@/components/TabIcon';
+import { ProfileScreen } from '@/screens/ProfileScreen';
+import { Icon, type IconName } from '@/components';
 
 import type { MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 /**
- * Bottom tab bar. Blurred translucent background on iOS mimics
- * the native look of apps like Apple Reminders / Notes. Android
- * falls back to a solid surface.
+ * Minimal bottom nav — a short white pill with a Home icon and a
+ * Profile avatar, plus a floating black "+" button to the right. The
+ * Tasks and Calendar tabs are reached through the Home chat ("what
+ * do I have today?") and the + button, not icons — keeps the bar
+ * uncluttered like the reference.
  */
 export const MainTabs: React.FC = () => {
-  const insets = useSafeAreaInsets();
-  const bottomOffset = Math.max(spacing.md, insets.bottom);
-
   return (
-  <Tab.Navigator
-    screenOptions={({ route }) => ({
-      headerShown: false,
-      tabBarShowLabel: true,
-      tabBarActiveTintColor: colors.text,
-      tabBarInactiveTintColor: colors.textTertiary,
-      tabBarLabelStyle: {
-        fontSize: 11,
-        fontWeight: '500',
-        letterSpacing: 0.1,
-      },
-      tabBarStyle: [styles.tabBar, { bottom: bottomOffset }],
-      tabBarBackground: () =>
-        Platform.OS === 'ios' ? (
-          <BlurView tint="light" intensity={80} style={StyleSheet.absoluteFill} />
-        ) : (
-          <View style={[StyleSheet.absoluteFill, styles.tabBarSolid]} />
-        ),
-      tabBarIcon: ({ color, focused }) => (
-        <TabIcon name={iconFor(route.name)} color={color} focused={focused} />
-      ),
-    })}
-  >
-    <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Home' }} />
-    <Tab.Screen name="Tasks" component={TasksScreen} options={{ title: 'Tasks' }} />
-    <Tab.Screen name="Assistant" component={AssistantScreen} options={{ title: 'Assistant' }} />
-    <Tab.Screen name="Calendar" component={CalendarScreen} options={{ title: 'Calendar' }} />
-  </Tab.Navigator>
+    <View style={{ flex: 1 }}>
+      <Tab.Navigator
+        tabBar={(props) => <FloatingBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
+        <Tab.Screen name="Home" component={HomeScreen} />
+        <Tab.Screen name="Tasks" component={TasksScreen} />
+        <Tab.Screen name="Calendar" component={CalendarScreen} />
+        <Tab.Screen name="Profile" component={ProfileScreen} />
+      </Tab.Navigator>
+    </View>
   );
 };
 
-const iconFor = (name: keyof MainTabParamList): IconName => {
-  switch (name) {
-    case 'Dashboard':
-      return 'home';
-    case 'Tasks':
-      return 'check';
-    case 'Assistant':
-      return 'owl';
-    case 'Calendar':
-      return 'calendar';
-  }
+/* -------------------------------------------------------------------------
+ * Custom tab bar
+ * -------------------------------------------------------------------------
+ */
+
+type Navigation = BottomTabNavigationProp<MainTabParamList>;
+
+interface BarProps {
+  state: { index: number; routeNames: string[] };
+  navigation: Navigation;
+}
+
+const BAR_ROUTES: { key: keyof MainTabParamList; icon: IconName }[] = [
+  { key: 'Home', icon: 'home' },
+  { key: 'Profile', icon: 'person' },
+];
+
+const FloatingBar: React.FC<BarProps> = ({ state, navigation }) => {
+  const insets = useSafeAreaInsets();
+  const bottom = Math.max(spacing.md, insets.bottom);
+
+  const currentKey = state.routeNames[state.index] as keyof MainTabParamList;
+
+  const goTo = (key: keyof MainTabParamList) => {
+    navigation.navigate(key as never);
+  };
+
+  // Pressing the + button cycles: Home → Tasks → Calendar → Home
+  const cycleKey: keyof MainTabParamList =
+    currentKey === 'Tasks'
+      ? 'Calendar'
+      : currentKey === 'Calendar'
+      ? 'Home'
+      : 'Tasks';
+
+  return (
+    <View style={[styles.container, { bottom }]} pointerEvents="box-none">
+      <View style={styles.pill}>
+        {BAR_ROUTES.map(({ key, icon }) => {
+          const active = key === currentKey;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => goTo(key)}
+              style={styles.pillBtn}
+              hitSlop={10}
+            >
+              {active && <View style={styles.pillBg} />}
+              <Icon
+                name={icon}
+                size={20}
+                color={active ? colors.text : colors.textTertiary}
+                strokeWidth={active ? 1.9 : 1.5}
+              />
+            </Pressable>
+          );
+        })}
+      </View>
+      <Pressable
+        onPress={() => goTo(cycleKey)}
+        style={styles.fab}
+        hitSlop={10}
+      >
+        <Icon
+          name={cycleKey === 'Calendar' ? 'calendar' : cycleKey === 'Tasks' ? 'check' : 'plus'}
+          size={22}
+          color={colors.textInverse}
+        />
+      </Pressable>
+    </View>
+  );
 };
 
 const styles = StyleSheet.create({
-  tabBar: {
+  container: {
     position: 'absolute',
-    left: spacing.lg,
-    right: spacing.lg,
-    height: 64,
-    borderRadius: radius.xxl,
-    borderTopWidth: 0,
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
-    paddingBottom: 8,
-    paddingTop: 8,
-    elevation: 6,
-    shadowColor: '#111113',
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
-  tabBarSolid: {
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    gap: 2,
+    ...shadows.card,
+  },
+  pillBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  pillBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 22,
+  },
+  fab: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.surfaceInverse,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.floating,
   },
 });

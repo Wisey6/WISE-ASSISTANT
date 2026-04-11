@@ -15,7 +15,8 @@ export type IconName =
   | 'sparkle'
   | 'arrowRight'
   | 'chevronRight'
-  | 'close';
+  | 'close'
+  | 'person';
 
 interface Props {
   name: IconName;
@@ -105,5 +106,12 @@ const renderPath = (name: IconName, color: string, sw: number) => {
       return stroke('M9 6l6 6-6 6', color, sw);
     case 'close':
       return stroke('M6 6l12 12M18 6L6 18', color, sw);
+    case 'person':
+      return (
+        <>
+          <Circle cx="12" cy="9" r="4" stroke={color} strokeWidth={sw} />
+          {stroke('M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5', color, sw)}
+        </>
+      );
   }
 };

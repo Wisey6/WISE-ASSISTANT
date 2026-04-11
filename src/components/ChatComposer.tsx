@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+  ViewStyle,
+} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -15,18 +21,30 @@ interface Props {
   onVoicePress?: () => void;
   isRecording?: boolean;
   placeholder?: string;
+  style?: ViewStyle;
 }
 
 /**
- * Assistant input bar. Uses a single pill with an auto-growing text
- * field on the left and a dynamic trailing button: microphone when
- * the field is empty, send arrow once the user starts typing.
+ * Assistant input bar. A single pill with:
+ *
+ *   - Multi-line text input that grows up to 3 lines.
+ *   - A trailing button that swaps based on state:
+ *       • empty → microphone
+ *       • empty + recording → pulsing microphone
+ *       • has text → send arrow (solid black)
+ *
+ * Text input fix: multi-line TextInput in React Native fires
+ * `onSubmitEditing` only when `blurOnSubmit` is true AND there's no
+ * newline. We explicitly handle the return key by checking for a
+ * trailing newline and stripping it, then submitting — that's the
+ * behavior most chat apps use.
  */
 export const ChatComposer: React.FC<Props> = ({
   onSubmit,
   onVoicePress,
   isRecording = false,
-  placeholder = 'Tell Wise what you’ve got on…',
+  placeholder = "Tell me what's on your mind…",
+  style,
 }) => {
   const [value, setValue] = useState('');
   const canSend = value.trim().length > 0;
@@ -40,32 +58,44 @@ export const ChatComposer: React.FC<Props> = ({
 
   const pulseStyle = useAnimatedStyle(() => ({
     opacity: 0.35 + pulse.value * 0.35,
-    transform: [{ scale: 1 + pulse.value * 0.15 }],
+    transform: [{ scale: 1 + pulse.value * 0.2 }],
   }));
 
-  const handleSend = () => {
+  const submitIfReady = () => {
     const trimmed = value.trim();
     if (!trimmed) return;
     onSubmit(trimmed);
     setValue('');
   };
 
+  // Detect hardware keyboard return without inserting a newline.
+  const onChangeText = (next: string) => {
+    if (next.endsWith('\n')) {
+      const trimmed = next.slice(0, -1).trim();
+      if (trimmed.length > 0) {
+        onSubmit(trimmed);
+        setValue('');
+        return;
+      }
+    }
+    setValue(next);
+  };
+
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, style]}>
       <TextInput
         value={value}
-        onChangeText={setValue}
+        onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
         multiline
-        returnKeyType="send"
-        onSubmitEditing={handleSend}
-        blurOnSubmit
+        blurOnSubmit={false}
+        onSubmitEditing={submitIfReady}
         style={[typography.body, styles.input]}
       />
       {canSend ? (
-        <Pressable onPress={handleSend} style={[styles.button, styles.buttonActive]}>
-          <Icon name="send" size={20} color={colors.textInverse} />
+        <Pressable onPress={submitIfReady} style={[styles.button, styles.buttonActive]}>
+          <Icon name="send" size={18} color={colors.textInverse} />
         </Pressable>
       ) : (
         <Pressable
@@ -75,7 +105,7 @@ export const ChatComposer: React.FC<Props> = ({
           {isRecording && <Animated.View style={[styles.pulse, pulseStyle]} />}
           <Icon
             name="mic"
-            size={20}
+            size={18}
             color={isRecording ? colors.textInverse : colors.text}
           />
         </Pressable>
@@ -95,38 +125,39 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    shadowColor: '#111113',
-    shadowOpacity: 0.06,
+    shadowColor: '#0C0C0E',
+    shadowOpacity: 0.05,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   input: {
     flex: 1,
     minHeight: 40,
-    maxHeight: 120,
+    maxHeight: 96,
     paddingVertical: spacing.sm,
     color: colors.text,
   },
   button: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: spacing.sm,
   },
   buttonActive: {
-    backgroundColor: colors.text,
+    backgroundColor: colors.surfaceInverse,
   },
   buttonRecording: {
     backgroundColor: colors.accent,
   },
   pulse: {
     position: 'absolute',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: colors.accent,
   },
 });
