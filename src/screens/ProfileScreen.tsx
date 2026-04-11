@@ -1,38 +1,71 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Icon, Screen, Text } from '@/components';
-import { colors, radius, spacing, tagColors } from '@/theme';
-import { useUserStore } from '@/store/useUserStore';
+import { Icon, OwlCharacter, Screen, Text } from '@/components';
+import {
+  colors,
+  radius,
+  spacing,
+  useUserTheme,
+  userPalettes,
+} from '@/theme';
+import { otherUserId, useUserStore } from '@/store/useUserStore';
 import { usePartnersStore } from '@/store/usePartnersStore';
 import { useAssistantStore } from '@/store/useAssistantStore';
-import { buildDailyBriefing } from '@/services/ai';
 import { useTaskStore } from '@/store/useTaskStore';
+import { buildDailyBriefing } from '@/services/ai';
+import { sendWeekAheadNow } from '@/services/notifications';
+import type { UserId } from '@/types';
 
 /**
  * Profile & settings. Minimal on purpose:
  *
- *   - Your color tag
- *   - Partner color tag
- *   - Reset assistant conversation
- *   - Preview the morning briefing
+ *   - Shows you + your partner (fixed Sarah/Tyler pair)
+ *   - Morning briefing preview
+ *   - Send this week's briefing now (with weather)
+ *   - Reset the assistant conversation
+ *   - Switch user (wipes identity back to the picker)
  */
 export const ProfileScreen: React.FC = () => {
   const user = useUserStore((s) => s.user);
-  const partners = usePartnersStore((s) => s.partners);
-  const meColor = usePartnersStore((s) => s.meColor);
-  const setMeColor = usePartnersStore((s) => s.setMeColor);
-  const setPartnerColor = usePartnersStore((s) => s.setPartnerColor);
+  const currentUserId = useUserStore((s) => s.currentUserId);
+  const signOut = useUserStore((s) => s.signOut);
+  const nameFor = usePartnersStore((s) => s.nameFor);
   const resetAssistant = useAssistantStore((s) => s.reset);
   const tasks = useTaskStore((s) => s.tasks);
+  const palette = useUserTheme();
 
-  const partner = partners[0];
+  const myId: UserId = (currentUserId ?? 'sarah') as UserId;
+  const partnerId: UserId = otherUserId(myId);
+  const partnerName = nameFor(partnerId);
+  const partnerPalette = userPalettes[partnerId];
+
+  const myTasks = tasks.filter((t) => {
+    const owner = t.ownerId === 'me' || t.ownerId === 'local-user' ? myId : t.ownerId;
+    return owner === myId;
+  });
+  const partnerTasks = tasks.filter((t) => {
+    const owner = t.ownerId === 'me' || t.ownerId === 'local-user' ? myId : t.ownerId;
+    return owner === partnerId;
+  });
+
   const briefing = buildDailyBriefing({
     name: user?.name ?? 'You',
-    partnerName: partner?.name,
-    myTasks: tasks.filter((t) => t.ownerId === 'me'),
-    partnerTasks: tasks.filter((t) => t.ownerId !== 'me'),
+    partnerName,
+    myTasks,
+    partnerTasks,
   });
+
+  const handleSendWeekAhead = async () => {
+    const upcoming = myTasks
+      .filter((t) => (t.startAt ?? t.dueAt) !== null)
+      .slice(0, 5)
+      .map((t) => t.title);
+    await sendWeekAheadNow({
+      userName: user?.name ?? 'you',
+      upcomingTitles: upcoming,
+    });
+  };
 
   return (
     <Screen scroll>
@@ -45,37 +78,59 @@ export const ProfileScreen: React.FC = () => {
       <Text variant="caption" style={styles.sectionLabel}>
         YOU
       </Text>
-      <View style={styles.row}>
-        <View style={[styles.avatar, { backgroundColor: meColor }]} />
+      <View
+        style={[
+          styles.row,
+          { backgroundColor: palette.accentSoft, borderColor: palette.accent },
+        ]}
+      >
+        <View style={styles.avatarWrap}>
+          <OwlCharacter size={56} variant={myId} state="idle" />
+        </View>
         <View style={{ flex: 1 }}>
-          <Text variant="headline">{user?.name ?? 'You'}</Text>
-          <Text variant="footnote">{user?.email ?? 'not signed in'}</Text>
+          <Text variant="headline" color={palette.accentDeep}>
+            {user?.name ?? 'You'}
+          </Text>
+          <Text variant="footnote" color={palette.accentDeep}>
+            {myId === 'sarah' ? 'pink theme' : 'blue theme'}
+          </Text>
         </View>
       </View>
-      <ColorRow value={meColor} onChange={setMeColor} />
 
       {/* Partner */}
-      {partner && (
-        <>
-          <Text variant="caption" style={[styles.sectionLabel, { marginTop: spacing.xl }]}>
-            PARTNER
+      <Text
+        variant="caption"
+        style={[styles.sectionLabel, { marginTop: spacing.xl }]}
+      >
+        PARTNER
+      </Text>
+      <View
+        style={[
+          styles.row,
+          {
+            backgroundColor: partnerPalette.accentSoft,
+            borderColor: partnerPalette.accent,
+          },
+        ]}
+      >
+        <View style={styles.avatarWrap}>
+          <OwlCharacter size={56} variant={partnerId} state="idle" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text variant="headline" color={partnerPalette.accentDeep}>
+            {partnerName}
           </Text>
-          <View style={styles.row}>
-            <View style={[styles.avatar, { backgroundColor: partner.color }]} />
-            <View style={{ flex: 1 }}>
-              <Text variant="headline">{partner.name}</Text>
-              <Text variant="footnote">Sharing tasks & calendar</Text>
-            </View>
-          </View>
-          <ColorRow
-            value={partner.color}
-            onChange={(c) => setPartnerColor(partner.id, c)}
-          />
-        </>
-      )}
+          <Text variant="footnote" color={partnerPalette.accentDeep}>
+            Sharing tasks & calendar (read-only on this phone)
+          </Text>
+        </View>
+      </View>
 
       {/* Morning briefing preview */}
-      <Text variant="caption" style={[styles.sectionLabel, { marginTop: spacing.xl }]}>
+      <Text
+        variant="caption"
+        style={[styles.sectionLabel, { marginTop: spacing.xl }]}
+      >
         TOMORROW'S BRIEFING
       </Text>
       <View style={styles.briefing}>
@@ -106,54 +161,46 @@ export const ProfileScreen: React.FC = () => {
           ))}
         </View>
 
-        {partner && (
-          <View style={styles.briefingBlock}>
-            <Text variant="caption" color={colors.textInverseMuted}>
-              {partner.name.toUpperCase()}'S DAY
+        <View style={styles.briefingBlock}>
+          <Text variant="caption" color={colors.textInverseMuted}>
+            {partnerName.toUpperCase()}'S DAY
+          </Text>
+          {briefing.partnerLines.map((line, i) => (
+            <Text
+              key={`p-${i}`}
+              variant="body"
+              color={colors.textInverse}
+              style={styles.briefingLine}
+            >
+              {line}
             </Text>
-            {briefing.partnerLines.map((line, i) => (
-              <Text
-                key={`p-${i}`}
-                variant="body"
-                color={colors.textInverse}
-                style={styles.briefingLine}
-              >
-                {line}
-              </Text>
-            ))}
-          </View>
-        )}
+          ))}
+        </View>
       </View>
 
-      <Pressable onPress={resetAssistant} style={styles.resetBtn}>
-        <Icon name="close" size={18} color={colors.textSecondary} />
+      <Pressable
+        onPress={handleSendWeekAhead}
+        style={[styles.primaryBtn, { backgroundColor: palette.accent }]}
+      >
+        <Icon name="sparkle" size={16} color="#FFFFFF" />
+        <Text variant="headline" color="#FFFFFF">
+          Send week-ahead briefing
+        </Text>
+      </Pressable>
+
+      <Pressable onPress={resetAssistant} style={styles.secondaryBtn}>
+        <Icon name="close" size={16} color={colors.textSecondary} />
         <Text variant="footnote">Reset conversation</Text>
+      </Pressable>
+
+      <Pressable onPress={signOut} style={styles.signOutBtn}>
+        <Text variant="footnote" color={colors.textTertiary}>
+          Switch user
+        </Text>
       </Pressable>
     </Screen>
   );
 };
-
-const ColorRow: React.FC<{
-  value: string;
-  onChange: (c: string) => void;
-}> = ({ value, onChange }) => (
-  <View style={styles.colorRow}>
-    {tagColors.map((c) => {
-      const active = c === value;
-      return (
-        <Pressable
-          key={c}
-          onPress={() => onChange(c)}
-          style={[
-            styles.swatch,
-            { backgroundColor: c },
-            active && styles.swatchActive,
-          ]}
-        />
-      );
-    })}
-  </View>
-);
 
 const styles = StyleSheet.create({
   sectionLabel: {
@@ -163,32 +210,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.surface,
     padding: spacing.lg,
     borderRadius: radius.xl,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  colorRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  swatch: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
     borderWidth: 2,
-    borderColor: 'transparent',
   },
-  swatchActive: {
-    borderColor: colors.text,
+  avatarWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   briefing: {
     backgroundColor: colors.surfaceInverse,
@@ -202,13 +233,28 @@ const styles = StyleSheet.create({
   briefingLine: {
     marginTop: 2,
   },
-  resetBtn: {
+  primaryBtn: {
     marginTop: spacing.xl,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    borderRadius: radius.pill,
+  },
+  secondaryBtn: {
+    marginTop: spacing.lg,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  signOutBtn: {
+    marginTop: spacing.sm,
+    alignSelf: 'center',
     paddingVertical: spacing.sm,
   },
 });

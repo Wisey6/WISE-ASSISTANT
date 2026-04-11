@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, Text as RNText, View } from 'react-native';
 import Animated, {
   Easing,
@@ -10,12 +10,15 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { G, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Ellipse, G, Path, Rect } from 'react-native-svg';
 
-import { colors } from '@/theme';
+import { colors, userPalettes } from '@/theme';
 
-const AnimatedG = Animated.createAnimatedComponent(G);
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
+// Cast to any — react-native-reanimated's type inference for
+// createAnimatedComponent wrapping react-native-svg primitives loses
+// the `style` prop. The runtime behavior is correct.
+const AnimatedG = Animated.createAnimatedComponent(G) as any;
+const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse) as any;
 
 export type OwlState =
   | 'idle'
@@ -28,23 +31,47 @@ export type OwlState =
   | 'dab'
   | 'hips';
 
+/** Owl color variant — pink for Sarah, blue for Tyler. */
+export type OwlVariant = 'sarah' | 'tyler';
+
 interface Props {
   size?: number;
   state?: OwlState;
+  /** Which user's color variant to render. Defaults to Sarah (pink). */
+  variant?: OwlVariant;
 }
 
-// Palette sampled from the reference snowy-owl illustration.
-const OUTLINE = '#3B2B22';
-const BODY = '#F3EFE6'; // off-white body
-const BODY_SHADE = '#DED6C6'; // light gray shadow for depth
-const BODY_SHADE_DEEP = '#C8BEAC';
-const BEAK = '#3B2B22';
-const BRANCH = '#6A4B3A';
-const BRANCH_DARK = '#503628';
+interface OwlPalette {
+  outline: string;
+  body: string;
+  bodyShade: string;
+  bodyDeep: string;
+  cheek: string;
+}
+
+function getPalette(variant: OwlVariant): OwlPalette {
+  const p = userPalettes[variant];
+  return {
+    outline: p.owlOutline,
+    body: p.owlBody,
+    bodyShade: p.owlBodyShade,
+    bodyDeep: p.owlBodyDeep,
+    cheek: p.owlCheek,
+  };
+}
+
+const BEAK = '#F2A23C'; // warm amber beak — reads cute against both variants
+const BRANCH = '#8B5E3C';
+const BRANCH_DARK = '#6A4527';
+const EYE_WHITE = '#FDFCFA';
 
 /**
- * Chunky pixel-art snowy owl perched on a branch. All shapes use
- * stepped rectangular edges (no curves) so it keeps the 8-bit look.
+ * Chunky round cartoon owl perched on a branch. The silhouette uses
+ * soft curves and big eyes for a cute, plushie-like look rather
+ * than the previous pixel-art stepped silhouette.
+ *
+ * Colors come from a per-user palette (Sarah = pink, Tyler = blue)
+ * via the `variant` prop.
  *
  * Nine animation states, all driven by Reanimated on the UI thread:
  *
@@ -58,7 +85,13 @@ const BRANCH_DARK = '#503628';
  *   dab        — one-shot tilt pose + pop of HOOT!
  *   hips       — side-to-side wiggle + HOOT!
  */
-export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) => {
+export const OwlCharacter: React.FC<Props> = ({
+  size = 200,
+  state = 'idle',
+  variant = 'sarah',
+}) => {
+  const palette = useMemo(() => getPalette(variant), [variant]);
+
   const bob = useSharedValue(0);
   const tilt = useSharedValue(0);
   const slide = useSharedValue(0);
@@ -267,74 +300,143 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
       {/* Branch (stays still — the bird bobs on top of it) */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Svg width={size} height={size} viewBox="0 0 100 112">
-          <Rect x="16" y="92" width="68" height="5" fill={BRANCH} />
-          <Rect x="16" y="97" width="68" height="2" fill={BRANCH_DARK} />
-          <Rect x="25" y="99" width="5" height="13" fill={BRANCH} />
-          <Rect x="70" y="99" width="5" height="13" fill={BRANCH} />
+          <Rect x="14" y="93" width="72" height="5" rx="2" fill={BRANCH} />
+          <Rect x="14" y="97" width="72" height="2" rx="1" fill={BRANCH_DARK} />
+          <Rect x="25" y="99" width="5" height="13" rx="2" fill={BRANCH} />
+          <Rect x="70" y="99" width="5" height="13" rx="2" fill={BRANCH} />
         </Svg>
       </View>
 
       {/* Owl body — animated on top of the branch */}
       <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
         <Svg width={size} height={size} viewBox="0 0 100 112">
-          {/* Dark outline silhouette — stepped, no curves, for pixel look */}
+          {/* Dark outline — single rounded blob, no steps */}
           <Path
-            d="M34 14 L62 14 L62 18 L66 18 L66 22 L70 22 L70 26 L74 26 L74 30 L78 30 L78 78 L74 78 L74 82 L70 82 L70 86 L66 86 L66 90 L62 90 L62 92 L34 92 L34 90 L30 90 L30 86 L26 86 L26 82 L22 82 L22 78 L18 78 L18 30 L22 30 L22 26 L26 26 L26 22 L30 22 L30 18 L34 18 Z"
-            fill={OUTLINE}
+            d="M50 12
+               C68 12 80 24 80 44
+               L80 74
+               C80 88 68 94 50 94
+               C32 94 20 88 20 74
+               L20 44
+               C20 24 32 12 50 12 Z"
+            fill={palette.outline}
           />
 
-          {/* White body fill — inset by 3 units to leave the outline visible */}
+          {/* Body fill — slightly smaller, same rounded shape */}
           <Path
-            d="M37 18 L59 18 L59 22 L63 22 L63 26 L67 26 L67 30 L71 30 L71 34 L75 34 L75 74 L71 74 L71 78 L67 78 L67 82 L63 82 L63 86 L59 86 L59 88 L37 88 L37 86 L33 86 L33 82 L29 82 L29 78 L25 78 L25 74 L21 74 L21 34 L25 34 L25 30 L29 30 L29 26 L33 26 L33 22 L37 22 Z"
-            fill={BODY}
+            d="M50 15
+               C66 15 77 26 77 44
+               L77 73
+               C77 85 66 91 50 91
+               C34 91 23 85 23 73
+               L23 44
+               C23 26 34 15 50 15 Z"
+            fill={palette.body}
           />
 
-          {/* Left wing seam — a vertical gray line hinting at a folded wing */}
-          <Rect x="25" y="42" width="3" height="34" fill={BODY_SHADE} />
-          <Rect x="25" y="76" width="7" height="3" fill={BODY_SHADE} />
-          {/* Right wing seam */}
-          <Rect x="72" y="42" width="3" height="34" fill={BODY_SHADE} />
-          <Rect x="68" y="76" width="7" height="3" fill={BODY_SHADE} />
+          {/* Little tufts on the head — gives the owl "ears" */}
+          <Path
+            d="M30 18 L26 10 L34 16 Z"
+            fill={palette.outline}
+          />
+          <Path
+            d="M70 18 L74 10 L66 16 Z"
+            fill={palette.outline}
+          />
 
-          {/* Belly shadow — a few soft gray rectangles for depth */}
-          <Rect x="35" y="56" width="30" height="3" fill={BODY_SHADE} opacity={0.6} />
-          <Rect x="37" y="64" width="26" height="3" fill={BODY_SHADE} opacity={0.6} />
-          <Rect x="39" y="72" width="22" height="3" fill={BODY_SHADE_DEEP} opacity={0.55} />
+          {/* Belly panel — a lighter oval for depth */}
+          <Ellipse
+            cx="50"
+            cy="66"
+            rx="19"
+            ry="18"
+            fill={palette.bodyShade}
+            opacity={0.55}
+          />
 
-          {/* Eyes — small dark chunky blocks */}
+          {/* Wings — rounded teardrops on each side */}
+          <Path
+            d="M25 44 C22 50 22 66 26 74 C30 80 34 78 33 70 L33 46 Z"
+            fill={palette.bodyShade}
+          />
+          <Path
+            d="M75 44 C78 50 78 66 74 74 C70 80 66 78 67 70 L67 46 Z"
+            fill={palette.bodyShade}
+          />
+
+          {/* Feather lines on the wings for detail */}
+          <Path
+            d="M27 50 L31 50 M26 56 L32 56 M27 62 L31 62 M28 68 L30 68"
+            stroke={palette.bodyDeep}
+            strokeWidth={0.8}
+            strokeLinecap="round"
+          />
+          <Path
+            d="M69 50 L73 50 M68 56 L74 56 M69 62 L73 62 M70 68 L72 68"
+            stroke={palette.bodyDeep}
+            strokeWidth={0.8}
+            strokeLinecap="round"
+          />
+
+          {/* Big round eye sockets — cream circles with dark outline */}
+          <Circle
+            cx="40"
+            cy="42"
+            r="10"
+            fill={EYE_WHITE}
+            stroke={palette.outline}
+            strokeWidth={1.5}
+          />
+          <Circle
+            cx="60"
+            cy="42"
+            r="10"
+            fill={EYE_WHITE}
+            stroke={palette.outline}
+            strokeWidth={1.5}
+          />
+
+          {/* Animated pupils — large, cute, with a glint */}
           <AnimatedG style={eyeGroupStyle}>
-            <AnimatedRect
-              x="37"
-              y="36"
-              width="6"
-              height="6"
-              fill={OUTLINE}
+            <AnimatedEllipse
+              cx="40"
+              cy="43"
+              rx="4.5"
+              ry="5.5"
+              fill={palette.outline}
               style={pupilLeft}
             />
-            <AnimatedRect
-              x="57"
-              y="36"
-              width="6"
-              height="6"
-              fill={OUTLINE}
+            <AnimatedEllipse
+              cx="60"
+              cy="43"
+              rx="4.5"
+              ry="5.5"
+              fill={palette.outline}
               style={pupilRight}
             />
-            {/* Tiny pupil highlights */}
-            <Rect x="41" y="36" width="1.5" height="1.5" fill={BODY} />
-            <Rect x="61" y="36" width="1.5" height="1.5" fill={BODY} />
+            {/* Glint highlights */}
+            <Circle cx="42" cy="41" r="1.5" fill={EYE_WHITE} />
+            <Circle cx="62" cy="41" r="1.5" fill={EYE_WHITE} />
+            <Circle cx="38.5" cy="44.5" r="0.8" fill={EYE_WHITE} />
+            <Circle cx="58.5" cy="44.5" r="0.8" fill={EYE_WHITE} />
           </AnimatedG>
 
-          {/* Beak — small dark triangle between and below eyes */}
-          <Path d="M48 44 L52 44 L50 49 Z" fill={BEAK} />
+          {/* Rosy cheeks — the cuteness multiplier */}
+          <Ellipse cx="30" cy="56" rx="4" ry="2.5" fill={palette.cheek} opacity={0.75} />
+          <Ellipse cx="70" cy="56" rx="4" ry="2.5" fill={palette.cheek} opacity={0.75} />
 
-          {/* Feet — two small blocks peeking below the body onto the branch */}
-          <Rect x="39" y="88" width="6" height="5" fill={OUTLINE} />
-          <Rect x="55" y="88" width="6" height="5" fill={OUTLINE} />
-          {/* Toes (tiny splits) */}
-          <Rect x="41" y="91" width="1.2" height="2" fill={BODY} />
-          <Rect x="43" y="91" width="1.2" height="2" fill={BODY} />
-          <Rect x="57" y="91" width="1.2" height="2" fill={BODY} />
-          <Rect x="59" y="91" width="1.2" height="2" fill={BODY} />
+          {/* Beak — small rounded triangle between the eyes */}
+          <Path
+            d="M47 51 L53 51 L50 57 Z"
+            fill={BEAK}
+            stroke={palette.outline}
+            strokeWidth={0.8}
+            strokeLinejoin="round"
+          />
+
+          {/* Feet — two small rounded blocks onto the branch */}
+          <Ellipse cx="42" cy="93" rx="4" ry="2.5" fill={BEAK} />
+          <Ellipse cx="58" cy="93" rx="4" ry="2.5" fill={BEAK} />
         </Svg>
       </Animated.View>
 
@@ -348,7 +450,7 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
             <Path
               d="M6 4 Q6 0, 10 0 L46 0 Q50 0, 50 4 L50 18 Q50 22, 46 22 L22 22 L14 30 L16 22 L10 22 Q6 22, 6 18 Z"
               fill={colors.surfaceInverse}
-              stroke={OUTLINE}
+              stroke={palette.outline}
               strokeWidth={1.5}
               strokeLinejoin="round"
             />

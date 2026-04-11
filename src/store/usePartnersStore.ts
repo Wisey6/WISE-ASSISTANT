@@ -1,52 +1,59 @@
 import { create } from 'zustand';
 
-import { tagColors } from '@/theme';
+import { userPalettes } from '@/theme';
 import type { Partner } from '@/types';
 
+import { useUserStore } from './useUserStore';
+
 interface PartnersState {
+  /**
+   * Both fixed users. Even the one on "this" phone is here — so
+   * calendar views can show tasks from both sides tinted correctly.
+   */
   partners: Partner[];
-  /** The "me" color — rendered as a partner entry with id === 'me'. */
-  meColor: string;
-  addPartner: (name: string, color?: string) => Partner;
-  setPartnerColor: (id: string, color: string) => void;
-  setMeColor: (color: string) => void;
-  removePartner: (id: string) => void;
+  /** Look up the display color for any owner ID. */
   colorFor: (ownerId: string) => string;
+  /** Look up the display name for any owner ID. */
+  nameFor: (ownerId: string) => string;
 }
 
+const SARAH: Partner = {
+  id: 'sarah',
+  name: userPalettes.sarah.name,
+  color: userPalettes.sarah.accent,
+};
+
+const TYLER: Partner = {
+  id: 'tyler',
+  name: userPalettes.tyler.name,
+  color: userPalettes.tyler.accent,
+};
+
 /**
- * Partners + color tagging. The store exposes `colorFor(ownerId)` so
- * any screen that renders a task can tint it with the right color.
+ * Fixed 2-user directory. Sarah is always pink, Tyler is always
+ * blue — the "other" person is whoever isn't logged in on this
+ * phone.
+ *
+ * `colorFor()` and `nameFor()` also accept the legacy 'me' owner
+ * string (used by old seed data) and resolve it via the current
+ * user store so existing tasks don't break.
  */
-export const usePartnersStore = create<PartnersState>((set, get) => ({
-  partners: [
-    { id: 'partner-1', name: 'Jamie', color: tagColors[0] }, // lavender
-  ],
-  meColor: tagColors[4], // sky
-
-  addPartner: (name, color) => {
-    const next: Partner = {
-      id: `partner_${Date.now().toString(36)}`,
-      name,
-      color: color ?? tagColors[get().partners.length % tagColors.length],
-    };
-    set((s) => ({ partners: [...s.partners, next] }));
-    return next;
-  },
-
-  setPartnerColor: (id, color) =>
-    set((s) => ({
-      partners: s.partners.map((p) => (p.id === id ? { ...p, color } : p)),
-    })),
-
-  setMeColor: (color) => set({ meColor: color }),
-
-  removePartner: (id) =>
-    set((s) => ({ partners: s.partners.filter((p) => p.id !== id) })),
+export const usePartnersStore = create<PartnersState>(() => ({
+  partners: [SARAH, TYLER],
 
   colorFor: (ownerId) => {
-    const s = get();
-    if (ownerId === 'me' || ownerId === 'local-user') return s.meColor;
-    return s.partners.find((p) => p.id === ownerId)?.color ?? s.meColor;
+    if (ownerId === 'sarah') return SARAH.color;
+    if (ownerId === 'tyler') return TYLER.color;
+    // Legacy fallback — old seed tasks used 'me' / 'local-user'.
+    const current = useUserStore.getState().currentUserId;
+    if (current) return current === 'sarah' ? SARAH.color : TYLER.color;
+    return SARAH.color;
+  },
+
+  nameFor: (ownerId) => {
+    if (ownerId === 'sarah') return SARAH.name;
+    if (ownerId === 'tyler') return TYLER.name;
+    const current = useUserStore.getState().currentUserId;
+    return current === 'tyler' ? TYLER.name : SARAH.name;
   },
 }));

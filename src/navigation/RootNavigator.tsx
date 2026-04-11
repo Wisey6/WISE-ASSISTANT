@@ -24,18 +24,17 @@ const navTheme = {
 };
 
 /**
- * Top-level navigator. We flip between the onboarding flow and the
- * main tab bar based on whether the user has finished onboarding.
- * Using a single root stack (rather than remounting) keeps the
- * transition smooth.
+ * Top-level navigator. We flip between the onboarding picker and
+ * the main tab bar based on whether a user (Sarah or Tyler) has
+ * been selected on this phone yet.
  */
 export const RootNavigator: React.FC = () => {
-  const hasOnboarded = useUserStore((s) => s.hasOnboarded);
+  const currentUserId = useUserStore((s) => s.currentUserId);
 
   return (
     <NavigationContainer theme={navTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {hasOnboarded ? (
+        {currentUserId ? (
           <Stack.Screen name="Main" component={MainTabs} />
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingNavigator} />

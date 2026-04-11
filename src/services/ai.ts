@@ -24,9 +24,12 @@ import type {
   Task,
   TaskContext,
   TaskSlot,
+  UserId,
   Weekday,
 } from '@/types';
 import { toISO } from '@/utils/date';
+import { userPalettes } from '@/theme';
+import { useUserStore, otherUserId } from '@/store/useUserStore';
 import { callClaude, hasApiKey, type ClaudeMessage } from './claude';
 
 /**
@@ -96,12 +99,14 @@ export async function handleUserTurn(
       return await handleTurnWithClaude(input, history);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[ai] Claude call failed, falling back:', msg);
+      console.warn('[ai] Gemini call failed, falling back:', msg);
+      const local = await handleTurnLocally(input, pending);
       return {
+        ...local,
         reply:
+          local.reply ||
           "I'm having trouble reaching my brain — falling back to my simpler parser for this one.",
-        mood: 'idle',
-        ...(await handleTurnLocally(input, pending)),
+        mood: local.mood ?? 'idle',
       };
     }
   }
@@ -205,10 +210,17 @@ async function handleTurnWithClaude(
     messages.push({ role: 'user', content: text });
   }
 
+  // Pull the current user identity so Claude knows who it's talking to
+  // and which one of the pair is the "partner" for ownership decisions.
+  const currentUserId = useUserStore.getState().currentUserId ?? 'sarah';
+  const partnerId = otherUserId(currentUserId);
+  const userName = userPalettes[currentUserId].name;
+  const partnerName = userPalettes[partnerId].name;
+
   const result = await callClaude({
     messages,
-    userName: 'Sarah',
-    partnerName: 'Jamie',
+    userName,
+    partnerName,
   });
 
   const tasks: ParsedTaskDraft[] = [];
@@ -228,8 +240,16 @@ async function handleTurnWithClaude(
         notes?: string;
         owner?: 'me' | 'partner';
       };
+      // Reject nameless tasks — the owl is instructed to always name
+      // them. If the model slips and sends "New task" / "Untitled" /
+      // empty, skip the tool call entirely so the user is forced to
+      // describe it in words.
+      const rawTitle = (t.title ?? '').trim();
+      if (!rawTitle || /^(new task|untitled|task)$/i.test(rawTitle)) {
+        continue;
+      }
       tasks.push({
-        title: t.title ?? 'Untitled',
+        title: rawTitle,
         dueAt: t.dueAt ?? null,
         startAt: t.startAt ?? null,
         endAt: t.endAt ?? null,

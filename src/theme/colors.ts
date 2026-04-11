@@ -52,5 +52,48 @@ export const tagColors = [
   '#B5B4AA', // stone
 ] as const;
 
+/**
+ * Per-user theme. The app has exactly two users — Sarah (pink) and
+ * Tyler (blue) — so we hard-code both palettes and pick between them
+ * based on whoever is logged in.
+ *
+ * Each palette gives the app a hero tint, a soft background wash,
+ * a pair of owl body colors, and a subtle border tone.
+ */
+export const userPalettes = {
+  sarah: {
+    name: 'Sarah',
+    // Hero — used for buttons, the today dot, the "you" tag.
+    accent: '#E8588F',
+    accentSoft: '#F9DCE6',
+    accentDeep: '#B83B6E',
+    // Owl body colors
+    owlBody: '#FFD5E3',
+    owlBodyShade: '#F6A9C4',
+    owlBodyDeep: '#E5829F',
+    owlCheek: '#FF9FB8',
+    owlOutline: '#5A2840',
+    // UI accents
+    tabActive: '#E8588F',
+    chipBg: '#FDE7EF',
+  },
+  tyler: {
+    name: 'Tyler',
+    accent: '#4C8DE0',
+    accentSoft: '#DCE9FA',
+    accentDeep: '#2D5FA8',
+    owlBody: '#CFE3FB',
+    owlBodyShade: '#A5C3EE',
+    owlBodyDeep: '#6F95CF',
+    owlCheek: '#8FB6EF',
+    owlOutline: '#1E3355',
+    tabActive: '#4C8DE0',
+    chipBg: '#E3EEFB',
+  },
+} as const;
+
+export type UserPaletteKey = keyof typeof userPalettes;
+export type UserPalette = (typeof userPalettes)[UserPaletteKey];
+
 export type ColorToken = keyof typeof colors;
 export type TagColor = (typeof tagColors)[number];

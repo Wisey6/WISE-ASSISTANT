@@ -22,6 +22,9 @@ interface Props {
   accentColor?: string;
   /** Partner name for the tag row */
   ownerLabel?: string;
+  /** When true, the check is a read-only indicator (this phone can't
+   * edit the other user's tasks). */
+  readOnly?: boolean;
 }
 
 /**
@@ -41,6 +44,7 @@ export const TaskCard: React.FC<Props> = ({
   onPress,
   accentColor,
   ownerLabel,
+  readOnly = false,
 }) => {
   const done = task.status === 'done';
   const scale = useSharedValue(1);
@@ -50,6 +54,7 @@ export const TaskCard: React.FC<Props> = ({
   }));
 
   const handleToggle = () => {
+    if (readOnly) return;
     Haptics.selectionAsync().catch(() => undefined);
     scale.value = withSequence(
       withTiming(0.97, { duration: 90 }),
@@ -90,10 +95,20 @@ export const TaskCard: React.FC<Props> = ({
             <Pressable
               onPress={handleToggle}
               hitSlop={14}
-              style={[styles.check, done && styles.checkDone]}
+              disabled={readOnly}
+              style={[
+                styles.check,
+                done && styles.checkDone,
+                readOnly && styles.checkReadOnly,
+              ]}
             >
-              {done && (
-                <Icon name="check" size={14} color={colors.text} />
+              {done && <Icon name="check" size={14} color={colors.text} />}
+              {readOnly && !done && (
+                <Icon
+                  name="chevronRight"
+                  size={12}
+                  color={colors.textInverseMuted}
+                />
               )}
             </Pressable>
           </View>
@@ -191,6 +206,10 @@ const styles = StyleSheet.create({
   checkDone: {
     backgroundColor: colors.textInverse,
     borderColor: colors.textInverse,
+  },
+  checkReadOnly: {
+    borderStyle: 'dashed',
+    borderColor: 'rgba(246, 244, 236, 0.3)',
   },
   metaRow: {
     flexDirection: 'row',

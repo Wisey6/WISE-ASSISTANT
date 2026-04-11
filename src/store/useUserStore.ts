@@ -1,32 +1,68 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { User } from '@/types';
+import { userPalettes } from '@/theme';
+import type { User, UserId } from '@/types';
 
 interface UserState {
+  /** Which person owns this phone. Null until onboarding picks one. */
+  currentUserId: UserId | null;
+  /** Convenience — the full user object for the current phone. */
   user: User | null;
+  /** True once the onboarding picker has been completed. */
   hasOnboarded: boolean;
-  setUser: (user: User | null) => void;
-  completeOnboarding: () => void;
-  linkPartner: (partnerId: string) => void;
+
+  pickUser: (id: UserId) => void;
+  signOut: () => void;
 }
 
 /**
- * Auth + onboarding state. Real auth will come from Firebase, but
- * the rest of the app only depends on this shape — so swapping in
- * the real backend later is a one-file change.
+ * App identity. There are exactly two users — Sarah and Tyler —
+ * and each phone is locked to one of them at onboarding. Persisted
+ * to AsyncStorage so the choice sticks across launches.
  */
-export const useUserStore = create<UserState>((set) => ({
-  user: {
-    id: 'local-user',
-    name: 'Alex',
-    email: 'alex@example.com',
-    partnerId: null,
-  },
-  hasOnboarded: false,
-  setUser: (user) => set({ user }),
-  completeOnboarding: () => set({ hasOnboarded: true }),
-  linkPartner: (partnerId) =>
-    set((state) => ({
-      user: state.user ? { ...state.user, partnerId } : state.user,
-    })),
-}));
+export const useUserStore = create<UserState>()(
+  persist(
+    (set) => ({
+      currentUserId: null,
+      user: null,
+      hasOnboarded: false,
+
+      pickUser: (id) => {
+        const palette = userPalettes[id];
+        const user: User = {
+          id,
+          name: palette.name,
+          color: palette.accent,
+        };
+        set({
+          currentUserId: id,
+          user,
+          hasOnboarded: true,
+        });
+      },
+
+      signOut: () =>
+        set({
+          currentUserId: null,
+          user: null,
+          hasOnboarded: false,
+        }),
+    }),
+    {
+      name: 'wise-user',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        currentUserId: state.currentUserId,
+        user: state.user,
+        hasOnboarded: state.hasOnboarded,
+      }),
+    },
+  ),
+);
+
+/** Returns the opposite user ID — Sarah ↔ Tyler. */
+export function otherUserId(id: UserId): UserId {
+  return id === 'sarah' ? 'tyler' : 'sarah';
+}

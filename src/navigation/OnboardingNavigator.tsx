@@ -1,26 +1,24 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import { WelcomeScreen } from '@/screens/onboarding/WelcomeScreen';
-import { CreateAccountScreen } from '@/screens/onboarding/CreateAccountScreen';
-import { InvitePartnerScreen } from '@/screens/onboarding/InvitePartnerScreen';
-import { PermissionsScreen } from '@/screens/onboarding/PermissionsScreen';
+import { PickUserScreen } from '@/screens/onboarding/PickUserScreen';
 
 import type { OnboardingStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 
+/**
+ * Onboarding is deliberately one screen: pick Sarah or Tyler. No
+ * account creation, no partner invites — this app is a fixed pair
+ * and each phone just has to say which half it is.
+ */
 export const OnboardingNavigator: React.FC = () => (
   <Stack.Navigator
     screenOptions={{
       headerShown: false,
-      animation: 'slide_from_right',
-      contentStyle: { backgroundColor: '#F8F8F8' },
+      animation: 'fade',
     }}
   >
-    <Stack.Screen name="Welcome" component={WelcomeScreen} />
-    <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
-    <Stack.Screen name="InvitePartner" component={InvitePartnerScreen} />
-    <Stack.Screen name="Permissions" component={PermissionsScreen} />
+    <Stack.Screen name="PickUser" component={PickUserScreen} />
   </Stack.Navigator>
 );

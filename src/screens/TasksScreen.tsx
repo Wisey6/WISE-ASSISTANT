@@ -12,8 +12,8 @@ import { Icon, Screen, TaskCard, Text } from '@/components';
 import { colors, radius, spacing } from '@/theme';
 import { useTaskStore } from '@/store/useTaskStore';
 import { usePartnersStore } from '@/store/usePartnersStore';
-import { useUserStore } from '@/store/useUserStore';
-import type { Task } from '@/types';
+import { otherUserId, useUserStore } from '@/store/useUserStore';
+import type { Task, UserId } from '@/types';
 
 type Filter = 'mine' | 'partner' | 'all';
 
@@ -25,12 +25,17 @@ type Filter = 'mine' | 'partner' | 'all';
 export const TasksScreen: React.FC = () => {
   const tasks = useTaskStore((s) => s.tasks);
   const toggleTask = useTaskStore((s) => s.toggleTask);
-  const partners = usePartnersStore((s) => s.partners);
   const colorFor = usePartnersStore((s) => s.colorFor);
+  const nameFor = usePartnersStore((s) => s.nameFor);
   const user = useUserStore((s) => s.user);
+  const currentUserId = useUserStore((s) => s.currentUserId);
 
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [filter, setFilter] = useState<Filter>('all');
+
+  const myId: UserId = (currentUserId ?? 'sarah') as UserId;
+  const partnerId: UserId = otherUserId(myId);
+  const partnerName = nameFor(partnerId);
 
   const weekStrip = useMemo(() => {
     const today = startOfDay(new Date());
@@ -45,8 +50,10 @@ export const TasksScreen: React.FC = () => {
     });
 
     const filtered = relevant.filter((t) => {
-      if (filter === 'mine') return t.ownerId === 'me';
-      if (filter === 'partner') return t.ownerId !== 'me';
+      // Legacy alias: 'me' resolves to the current user.
+      const owner = t.ownerId === 'me' || t.ownerId === 'local-user' ? myId : t.ownerId;
+      if (filter === 'mine') return owner === myId;
+      if (filter === 'partner') return owner === partnerId;
       return true;
     });
 
@@ -55,9 +62,7 @@ export const TasksScreen: React.FC = () => {
       const bw = new Date(b.startAt ?? b.dueAt ?? 0).getTime();
       return aw - bw;
     });
-  }, [tasks, selectedDate, filter]);
-
-  const partnerName = partners[0]?.name;
+  }, [tasks, selectedDate, filter, myId, partnerId]);
 
   return (
     <Screen scroll>
@@ -139,19 +144,21 @@ export const TasksScreen: React.FC = () => {
         {dayTasks.length === 0 ? (
           <EmptyCard isToday={isToday(selectedDate)} />
         ) : (
-          dayTasks.map((t) => (
-            <TaskCard
-              key={t.id}
-              task={t}
-              accentColor={t.color ?? colorFor(t.ownerId)}
-              ownerLabel={
-                t.ownerId === 'me'
-                  ? user?.name ?? 'Me'
-                  : partners.find((p) => p.id === t.ownerId)?.name ?? 'Partner'
-              }
-              onToggle={toggleTask}
-            />
-          ))
+          dayTasks.map((t) => {
+            const resolvedOwner =
+              t.ownerId === 'me' || t.ownerId === 'local-user' ? myId : t.ownerId;
+            const isMine = resolvedOwner === myId;
+            return (
+              <TaskCard
+                key={t.id}
+                task={t}
+                accentColor={t.color ?? colorFor(t.ownerId)}
+                ownerLabel={nameFor(t.ownerId)}
+                onToggle={toggleTask}
+                readOnly={!isMine}
+              />
+            );
+          })
         )}
       </View>
     </Screen>

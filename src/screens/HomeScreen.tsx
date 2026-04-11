@@ -21,15 +21,15 @@ import {
   OwlCharacter,
   SuggestionChips,
   Text,
+  type OwlState,
 } from '@/components';
-import { colors, radius, spacing } from '@/theme';
+import { colors, radius, spacing, useUserTheme } from '@/theme';
 import { useAssistantStore } from '@/store/useAssistantStore';
 import { useTaskStore } from '@/store/useTaskStore';
-import { usePartnersStore } from '@/store/usePartnersStore';
-import { useUserStore } from '@/store/useUserStore';
+import { otherUserId, useUserStore } from '@/store/useUserStore';
 import { handleUserTurn } from '@/services/ai';
 import { useVoiceInput } from '@/services/voice';
-import type { AssistantMessage } from '@/types';
+import type { AssistantMessage, UserId } from '@/types';
 
 /**
  * Home is the primary surface — owl + chat.
@@ -56,8 +56,12 @@ export const HomeScreen: React.FC = () => {
 
   const addTasksFromDrafts = useTaskStore((s) => s.addTasksFromDrafts);
   const addRecurringSchedule = useTaskStore((s) => s.addRecurringSchedule);
-  const meColor = usePartnersStore((s) => s.meColor);
   const user = useUserStore((s) => s.user);
+  const currentUserId = useUserStore((s) => s.currentUserId);
+  const palette = useUserTheme();
+  const meColor = palette.accent;
+  // The owl variant follows the current user — pink for Sarah, blue for Tyler.
+  const owlVariant: UserId = currentUserId ?? 'sarah';
 
   const voice = useVoiceInput();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -99,9 +103,15 @@ export const HomeScreen: React.FC = () => {
       const response = await handleUserTurn(text, latestHistory, pendingIntent);
 
       // Figure out which owner id to attribute new tasks to. Default
-      // is the user; Claude can hint at "partner" via ownerHint.
-      const partnerId = usePartnersStore.getState().partners[0]?.id ?? 'me';
-      const targetOwner = response.ownerHint === 'partner' ? partnerId : 'me';
+      // is the current phone's user; Claude can hint at "partner" via
+      // ownerHint — but because cross-user writes are blocked by the
+      // task store, "partner" drafts get dropped and the owl should
+      // have reminded the user that the partner needs to add it
+      // themselves (per the system prompt).
+      const currentId = (currentUserId ?? 'sarah') as UserId;
+      const partnerId = otherUserId(currentId);
+      const targetOwner =
+        response.ownerHint === 'partner' ? partnerId : currentId;
 
       let createdIds: string[] = [];
 
@@ -145,6 +155,7 @@ export const HomeScreen: React.FC = () => {
       addRecurringSchedule,
       pendingIntent,
       meColor,
+      currentUserId,
     ],
   );
 
@@ -191,6 +202,7 @@ export const HomeScreen: React.FC = () => {
       <HeaderHero
         hasConversation={hasConversation}
         owlState={owlState}
+        owlVariant={owlVariant}
         name={user?.name ?? 'there'}
         insetTop={insets.top}
       />
@@ -235,7 +247,8 @@ export const HomeScreen: React.FC = () => {
 
 interface HeaderProps {
   hasConversation: boolean;
-  owlState: 'idle' | 'listening' | 'thinking' | 'talking' | 'happy' | 'sleep';
+  owlState: OwlState;
+  owlVariant: UserId;
   name: string;
   insetTop: number;
 }
@@ -243,6 +256,7 @@ interface HeaderProps {
 const HeaderHero: React.FC<HeaderProps> = ({
   hasConversation,
   owlState,
+  owlVariant,
   name,
   insetTop,
 }) => {
@@ -262,7 +276,7 @@ const HeaderHero: React.FC<HeaderProps> = ({
         style={[styles.hero, wrapStyle, { paddingTop: insetTop + spacing.sm }]}
       >
         <View style={styles.heroCompact}>
-          <OwlCharacter size={64} state={owlState} />
+          <OwlCharacter size={64} state={owlState} variant={owlVariant} />
           <View style={{ marginLeft: spacing.md, flex: 1 }}>
             <Text variant="caption">YOUR ASSISTANT</Text>
             <Text variant="title3">{stateLabel(owlState)}</Text>
@@ -277,7 +291,7 @@ const HeaderHero: React.FC<HeaderProps> = ({
       style={[styles.hero, wrapStyle, { paddingTop: insetTop + spacing.sm }]}
     >
       <View style={styles.heroFull}>
-        <OwlCharacter size={200} state={owlState} />
+        <OwlCharacter size={200} state={owlState} variant={owlVariant} />
         <Text variant="title1" style={styles.heroTitle}>
           Hey {name}.
         </Text>

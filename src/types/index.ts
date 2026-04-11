@@ -55,11 +55,18 @@ export interface Partner {
   color: string;
 }
 
+/**
+ * This app has exactly two users: Sarah and Tyler. There is no
+ * general-purpose account system — each phone picks one once and
+ * that becomes their identity forever.
+ */
+export type UserId = 'sarah' | 'tyler';
+
 export interface User {
-  id: string;
+  id: UserId;
   name: string;
-  email: string;
-  partnerId: string | null;
+  /** Pink for Sarah, blue for Tyler. */
+  color: string;
 }
 
 export interface AssistantMessage {
