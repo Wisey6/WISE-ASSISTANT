@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text as RNText, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -10,12 +10,12 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
+import Svg, { G, Path, Rect } from 'react-native-svg';
 
 import { colors } from '@/theme';
 
 const AnimatedG = Animated.createAnimatedComponent(G);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 export type OwlState =
   | 'idle'
@@ -33,34 +33,30 @@ interface Props {
   state?: OwlState;
 }
 
-// Palette sampled from the reference illustration.
-const OUTLINE = '#3B2716';
-const BODY = '#8A5A33';
-const BODY_HILITE = '#A06B3E';
-const BELLY = '#EED08A';
-const BELLY_MARK = '#7C4A23';
-const BEAK = '#F4A930';
-const FOOT = '#F3A837';
-const FOOT_STRIPE = '#3B2716';
-const EYE_WHITE = '#FAFAF5';
-const PUPIL = '#120E08';
+// Palette sampled from the reference snowy-owl illustration.
+const OUTLINE = '#3B2B22';
+const BODY = '#F3EFE6'; // off-white body
+const BODY_SHADE = '#DED6C6'; // light gray shadow for depth
+const BODY_SHADE_DEEP = '#C8BEAC';
+const BEAK = '#3B2B22';
+const BRANCH = '#6A4B3A';
+const BRANCH_DARK = '#503628';
 
 /**
- * Pixel-art style barn owl. Stylized but recognisable — round brown
- * body with pointed ear tufts, big white eyes with full black pupils,
- * cream chest with V-feathers, orange beak and striped feet.
+ * Chunky pixel-art snowy owl perched on a branch. All shapes use
+ * stepped rectangular edges (no curves) so it keeps the 8-bit look.
  *
- * Nine animation states — all driven by Reanimated on the UI thread:
+ * Nine animation states, all driven by Reanimated on the UI thread:
  *
- *   idle       — gentle bob + occasional blink
- *   listening  — eyes widen, slow bob
- *   thinking   — head tilt + pupils look up
- *   talking    — quick bob + pupils dart
+ *   idle       — gentle bob, occasional blink
+ *   listening  — slower bob, eyes widen
+ *   thinking   — head tilt, pupils look up
+ *   talking    — quick bob, pupils dart
  *   happy      — squint + bounce
- *   sleep      — eyes closed + floating Z
- *   dance      — hip shake with rotation + "HOOT!" bubble
- *   dab        — one-off dab pose with "HOOT!" bubble
- *   hips       — side-to-side hip wiggle with "HOOT!" bubble
+ *   sleep      — eyes closed, floating Z
+ *   dance      — hip shake + tilt + repeating HOOT!
+ *   dab        — one-shot tilt pose + pop of HOOT!
+ *   hips       — side-to-side wiggle + HOOT!
  */
 export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) => {
   const bob = useSharedValue(0);
@@ -110,7 +106,7 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
           ),
           -1,
         );
-        eyeScale.value = withSpring(1.12, { damping: 12, stiffness: 140 });
+        eyeScale.value = withSpring(1.3, { damping: 12, stiffness: 140 });
         break;
 
       case 'thinking':
@@ -124,7 +120,7 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
         );
         pupilY.value = withRepeat(
           withSequence(
-            withTiming(-1.4, { duration: 700 }),
+            withTiming(-1.2, { duration: 700 }),
             withTiming(-2, { duration: 700 }),
           ),
           -1,
@@ -135,8 +131,8 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
       case 'talking':
         bob.value = withRepeat(
           withSequence(
-            withTiming(-2, { duration: 260, easing: Easing.inOut(Easing.quad) }),
-            withTiming(0, { duration: 260, easing: Easing.inOut(Easing.quad) }),
+            withTiming(-2, { duration: 260 }),
+            withTiming(0, { duration: 260 }),
           ),
           -1,
         );
@@ -159,7 +155,7 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
           3,
           false,
         );
-        eyeScale.value = withTiming(0.3, { duration: 160 });
+        eyeScale.value = withTiming(0.25, { duration: 160 });
         hoot.value = withRepeat(withTiming(1, { duration: 1400 }), -1);
         break;
 
@@ -186,8 +182,8 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
         );
         tilt.value = withRepeat(
           withSequence(
-            withTiming(8, { duration: 280, easing: Easing.inOut(Easing.quad) }),
-            withTiming(-8, { duration: 280, easing: Easing.inOut(Easing.quad) }),
+            withTiming(8, { duration: 280 }),
+            withTiming(-8, { duration: 280 }),
           ),
           -1,
           true,
@@ -203,7 +199,6 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
         break;
 
       case 'dab':
-        // A one-shot tilted pose — quick drop + hold + release
         tilt.value = withSequence(
           withTiming(-28, { duration: 180, easing: Easing.out(Easing.back(1.4)) }),
           withDelay(900, withSpring(0, { damping: 10, stiffness: 160 })),
@@ -269,131 +264,77 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
 
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
+      {/* Branch (stays still — the bird bobs on top of it) */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Svg width={size} height={size} viewBox="0 0 100 112">
+          <Rect x="16" y="92" width="68" height="5" fill={BRANCH} />
+          <Rect x="16" y="97" width="68" height="2" fill={BRANCH_DARK} />
+          <Rect x="25" y="99" width="5" height="13" fill={BRANCH} />
+          <Rect x="70" y="99" width="5" height="13" fill={BRANCH} />
+        </Svg>
+      </View>
+
+      {/* Owl body — animated on top of the branch */}
       <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
-        <Svg width={size} height={size} viewBox="0 0 100 102">
-          {/* ear tufts */}
+        <Svg width={size} height={size} viewBox="0 0 100 112">
+          {/* Dark outline silhouette — stepped, no curves, for pixel look */}
           <Path
-            d="M30 18 L34 6 L40 18 Z"
+            d="M34 14 L62 14 L62 18 L66 18 L66 22 L70 22 L70 26 L74 26 L74 30 L78 30 L78 78 L74 78 L74 82 L70 82 L70 86 L66 86 L66 90 L62 90 L62 92 L34 92 L34 90 L30 90 L30 86 L26 86 L26 82 L22 82 L22 78 L18 78 L18 30 L22 30 L22 26 L26 26 L26 22 L30 22 L30 18 L34 18 Z"
+            fill={OUTLINE}
+          />
+
+          {/* White body fill — inset by 3 units to leave the outline visible */}
+          <Path
+            d="M37 18 L59 18 L59 22 L63 22 L63 26 L67 26 L67 30 L71 30 L71 34 L75 34 L75 74 L71 74 L71 78 L67 78 L67 82 L63 82 L63 86 L59 86 L59 88 L37 88 L37 86 L33 86 L33 82 L29 82 L29 78 L25 78 L25 74 L21 74 L21 34 L25 34 L25 30 L29 30 L29 26 L33 26 L33 22 L37 22 Z"
             fill={BODY}
-            stroke={OUTLINE}
-            strokeWidth={1.6}
-            strokeLinejoin="round"
-          />
-          <Path
-            d="M60 18 L66 6 L70 18 Z"
-            fill={BODY}
-            stroke={OUTLINE}
-            strokeWidth={1.6}
-            strokeLinejoin="round"
           />
 
-          {/* body (outline + fill) */}
-          <Path
-            d="M50 12 C26 12, 12 30, 12 58 C12 84, 26 96, 50 96 C74 96, 88 84, 88 58 C88 30, 74 12, 50 12 Z"
-            fill={BODY}
-            stroke={OUTLINE}
-            strokeWidth={2.2}
-          />
+          {/* Left wing seam — a vertical gray line hinting at a folded wing */}
+          <Rect x="25" y="42" width="3" height="34" fill={BODY_SHADE} />
+          <Rect x="25" y="76" width="7" height="3" fill={BODY_SHADE} />
+          {/* Right wing seam */}
+          <Rect x="72" y="42" width="3" height="34" fill={BODY_SHADE} />
+          <Rect x="68" y="76" width="7" height="3" fill={BODY_SHADE} />
 
-          {/* subtle highlight patch on the body */}
-          <Path
-            d="M22 40 C20 52, 22 62, 28 72 C22 60, 22 48, 26 38 Z"
-            fill={BODY_HILITE}
-            opacity={0.7}
-          />
+          {/* Belly shadow — a few soft gray rectangles for depth */}
+          <Rect x="35" y="56" width="30" height="3" fill={BODY_SHADE} opacity={0.6} />
+          <Rect x="37" y="64" width="26" height="3" fill={BODY_SHADE} opacity={0.6} />
+          <Rect x="39" y="72" width="22" height="3" fill={BODY_SHADE_DEEP} opacity={0.55} />
 
-          {/* cream belly */}
-          <Path
-            d="M50 42 C36 42, 28 54, 30 74 C32 88, 42 94, 50 94 C58 94, 68 88, 70 74 C72 54, 64 42, 50 42 Z"
-            fill={BELLY}
-            stroke={OUTLINE}
-            strokeWidth={1.8}
-          />
-
-          {/* V feather marks on belly */}
-          <Path
-            d="M39 62 l2.4 2.2 l2.4 -2.2 M46 62 l2.4 2.2 l2.4 -2.2 M53 62 l2.4 2.2 l2.4 -2.2"
-            stroke={BELLY_MARK}
-            strokeWidth={1.5}
-            fill="none"
-            strokeLinecap="round"
-          />
-          <Path
-            d="M42 70 l2.4 2.2 l2.4 -2.2 M49 70 l2.4 2.2 l2.4 -2.2 M56 70 l2.4 2.2 l2.4 -2.2"
-            stroke={BELLY_MARK}
-            strokeWidth={1.5}
-            fill="none"
-            strokeLinecap="round"
-          />
-          <Path
-            d="M45 78 l2.4 2.2 l2.4 -2.2 M52 78 l2.4 2.2 l2.4 -2.2"
-            stroke={BELLY_MARK}
-            strokeWidth={1.5}
-            fill="none"
-            strokeLinecap="round"
-          />
-
-          {/* feet */}
-          <Rect
-            x="34"
-            y="92"
-            width="14"
-            height="7"
-            rx="1.5"
-            fill={FOOT}
-            stroke={OUTLINE}
-            strokeWidth={1.5}
-          />
-          <Rect
-            x="52"
-            y="92"
-            width="14"
-            height="7"
-            rx="1.5"
-            fill={FOOT}
-            stroke={OUTLINE}
-            strokeWidth={1.5}
-          />
-          {/* talon stripes */}
-          <Rect x="37" y="92.5" width="1.6" height="6" fill={FOOT_STRIPE} />
-          <Rect x="41" y="92.5" width="1.6" height="6" fill={FOOT_STRIPE} />
-          <Rect x="44.6" y="92.5" width="1.6" height="6" fill={FOOT_STRIPE} />
-          <Rect x="55" y="92.5" width="1.6" height="6" fill={FOOT_STRIPE} />
-          <Rect x="59" y="92.5" width="1.6" height="6" fill={FOOT_STRIPE} />
-          <Rect x="62.6" y="92.5" width="1.6" height="6" fill={FOOT_STRIPE} />
-
-          {/* eyes — big white circles with large dark pupils */}
+          {/* Eyes — small dark chunky blocks */}
           <AnimatedG style={eyeGroupStyle}>
-            <Circle
-              cx="38"
-              cy="40"
-              r="11"
-              fill={EYE_WHITE}
-              stroke={OUTLINE}
-              strokeWidth={2}
+            <AnimatedRect
+              x="37"
+              y="36"
+              width="6"
+              height="6"
+              fill={OUTLINE}
+              style={pupilLeft}
             />
-            <Circle
-              cx="62"
-              cy="40"
-              r="11"
-              fill={EYE_WHITE}
-              stroke={OUTLINE}
-              strokeWidth={2}
+            <AnimatedRect
+              x="57"
+              y="36"
+              width="6"
+              height="6"
+              fill={OUTLINE}
+              style={pupilRight}
             />
-            <AnimatedCircle cx="38" cy="41" r="6.5" fill={PUPIL} style={pupilLeft} />
-            <AnimatedCircle cx="62" cy="41" r="6.5" fill={PUPIL} style={pupilRight} />
-            <Circle cx="40" cy="39" r="1.5" fill={EYE_WHITE} />
-            <Circle cx="64" cy="39" r="1.5" fill={EYE_WHITE} />
+            {/* Tiny pupil highlights */}
+            <Rect x="41" y="36" width="1.5" height="1.5" fill={BODY} />
+            <Rect x="61" y="36" width="1.5" height="1.5" fill={BODY} />
           </AnimatedG>
 
-          {/* beak */}
-          <Path
-            d="M46 50 L54 50 L50 60 Z"
-            fill={BEAK}
-            stroke={OUTLINE}
-            strokeWidth={1.5}
-            strokeLinejoin="round"
-          />
+          {/* Beak — small dark triangle between and below eyes */}
+          <Path d="M48 44 L52 44 L50 49 Z" fill={BEAK} />
+
+          {/* Feet — two small blocks peeking below the body onto the branch */}
+          <Rect x="39" y="88" width="6" height="5" fill={OUTLINE} />
+          <Rect x="55" y="88" width="6" height="5" fill={OUTLINE} />
+          {/* Toes (tiny splits) */}
+          <Rect x="41" y="91" width="1.2" height="2" fill={BODY} />
+          <Rect x="43" y="91" width="1.2" height="2" fill={BODY} />
+          <Rect x="57" y="91" width="1.2" height="2" fill={BODY} />
+          <Rect x="59" y="91" width="1.2" height="2" fill={BODY} />
         </Svg>
       </Animated.View>
 
@@ -413,7 +354,7 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
             />
           </Svg>
           <View style={styles.hootText}>
-            <HootLabel />
+            <RNText style={styles.hootLabel}>HOOT!</RNText>
           </View>
         </Animated.View>
       )}
@@ -435,21 +376,6 @@ export const OwlCharacter: React.FC<Props> = ({ size = 200, state = 'idle' }) =>
     </View>
   );
 };
-
-import { Text as RNText } from 'react-native';
-
-const HootLabel: React.FC = () => (
-  <RNText
-    style={{
-      color: colors.textInverse,
-      fontSize: 11,
-      fontWeight: '700',
-      letterSpacing: 0.8,
-    }}
-  >
-    HOOT!
-  </RNText>
-);
 
 const styles = StyleSheet.create({
   wrap: {
@@ -476,5 +402,11 @@ const styles = StyleSheet.create({
     bottom: 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  hootLabel: {
+    color: colors.textInverse,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
 });
