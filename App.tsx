@@ -10,37 +10,26 @@ import {
 } from '@/services/notifications';
 import { useTaskStore } from '@/store/useTaskStore';
 import { useUserStore } from '@/store/useUserStore';
-import type { UserId } from '@/types';
 
 /**
- * On boot we wire up two things:
- *
- *   1. Ask for notification permission (only fires the first time).
- *   2. Schedule the weekly Monday 7 AM briefing with the current
- *      user's name and their upcoming tasks for the next 7 days.
- *
- * The weekly briefing is re-scheduled each time the app launches so
- * the task list + weather stay fresh.
+ * On boot we wire up:
+ *   1. Notification permission (first launch only).
+ *   2. Weekly Monday 7 AM briefing with the user's upcoming tasks.
  */
 function useBootstrap() {
-  const currentUserId = useUserStore((s) => s.currentUserId);
+  const userName = useUserStore((s) => s.user.name);
   const tasks = useTaskStore((s) => s.tasks);
 
   useEffect(() => {
-    if (!currentUserId) return;
-
     let cancelled = false;
     (async () => {
       await requestNotificationPermission().catch(() => false);
       if (cancelled) return;
 
-      const myId = currentUserId as UserId;
       const now = Date.now();
       const weekEnd = now + 7 * 24 * 60 * 60 * 1000;
       const upcoming = tasks
         .filter((t) => {
-          const owner = t.ownerId === 'me' || t.ownerId === 'local-user' ? myId : t.ownerId;
-          if (owner !== myId) return false;
           const when = t.startAt ?? t.dueAt;
           if (!when) return false;
           const ts = new Date(when).getTime();
@@ -54,9 +43,8 @@ function useBootstrap() {
         .slice(0, 5)
         .map((t) => t.title);
 
-      const { user } = useUserStore.getState();
       await scheduleWeeklyBriefing({
-        userName: user?.name ?? 'you',
+        userName,
         upcomingTitles: upcoming,
       }).catch(() => undefined);
     })();
@@ -64,7 +52,7 @@ function useBootstrap() {
     return () => {
       cancelled = true;
     };
-  }, [currentUserId, tasks]);
+  }, [userName, tasks]);
 }
 
 function BootstrapGate() {

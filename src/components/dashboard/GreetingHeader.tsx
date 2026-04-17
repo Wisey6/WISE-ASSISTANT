@@ -16,8 +16,7 @@ function greetingFor(d: Date): string {
 }
 
 export const GreetingHeader: React.FC = () => {
-  const userId = useUserStore((s) => s.currentUserId);
-  const name = userId ? userId[0].toUpperCase() + userId.slice(1) : 'there';
+  const name = useUserStore((s) => s.user.name);
   const now = new Date();
   return (
     <View style={styles.wrap}>
@@ -32,7 +31,7 @@ export const GreetingHeader: React.FC = () => {
       <Text
         style={[typography.subhead, { color: lightPalette.textSecondary }]}
       >
-        Here's what deserves your attention today.
+        Ottley's sorted what actually matters today.
       </Text>
     </View>
   );

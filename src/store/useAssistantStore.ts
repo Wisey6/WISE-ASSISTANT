@@ -3,15 +3,12 @@ import { create } from 'zustand';
 import type { AssistantMessage, PendingIntent } from '@/types';
 import { createId } from '@/utils/id';
 import { toISO } from '@/utils/date';
-import type { OwlState } from '@/components/OwlCharacter';
 
 interface AssistantState {
   messages: AssistantMessage[];
   isThinking: boolean;
   /** Slot-filling machine state — null means we're idle. */
   pendingIntent: PendingIntent | null;
-  /** What the owl should be doing right now. */
-  owlMood: OwlState;
 
   appendUser: (text: string) => AssistantMessage;
   appendAssistant: (
@@ -20,19 +17,20 @@ interface AssistantState {
   ) => AssistantMessage;
   setThinking: (thinking: boolean) => void;
   setPendingIntent: (intent: PendingIntent | null) => void;
-  setOwlMood: (mood: OwlState) => void;
   reset: () => void;
 }
 
 const welcome: AssistantMessage = {
   id: createId('msg'),
   role: 'assistant',
-  text: "Morning — what's on your plate today?",
+  text:
+    "Ottley here. Professional chaos-wrangler, amateur joke-teller. What are we pretending to have under control today?",
   createdAt: toISO(new Date()),
   suggestions: [
-    'I have a new task at work',
-    'I work weekdays 9–5 except Wednesday',
-    'What do I have today?',
+    "Plan my week",
+    "What's due this week?",
+    "Tell me a joke",
+    "Add a task",
   ],
 };
 
@@ -40,7 +38,6 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   messages: [welcome],
   isThinking: false,
   pendingIntent: null,
-  owlMood: 'idle',
 
   appendUser: (text) => {
     const msg: AssistantMessage = {
@@ -68,13 +65,11 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
   setThinking: (isThinking) => set({ isThinking }),
   setPendingIntent: (pendingIntent) => set({ pendingIntent }),
-  setOwlMood: (owlMood) => set({ owlMood }),
 
   reset: () =>
     set({
       messages: [welcome],
       isThinking: false,
       pendingIntent: null,
-      owlMood: 'idle',
     }),
 }));

@@ -4,8 +4,6 @@ export { ChatComposer } from './ChatComposer';
 export { Icon } from './Icon';
 export type { IconName } from './Icon';
 export { MessageBubble } from './MessageBubble';
-export { OwlCharacter } from './OwlCharacter';
-export type { OwlState } from './OwlCharacter';
 export { ProgressBar } from './ProgressBar';
 export { Screen } from './Screen';
 export { SectionHeader } from './SectionHeader';

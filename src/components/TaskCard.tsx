@@ -18,13 +18,8 @@ interface Props {
   task: Task;
   onToggle: (id: string) => void;
   onPress?: (task: Task) => void;
-  /** Partner / owner color — rendered as a small accent dot + left edge. */
+  /** Optional accent color — rendered as a small dot + left edge. */
   accentColor?: string;
-  /** Partner name for the tag row */
-  ownerLabel?: string;
-  /** When true, the check is a read-only indicator (this phone can't
-   * edit the other user's tasks). */
-  readOnly?: boolean;
 }
 
 /**
@@ -43,8 +38,6 @@ export const TaskCard: React.FC<Props> = ({
   onToggle,
   onPress,
   accentColor,
-  ownerLabel,
-  readOnly = false,
 }) => {
   const done = task.status === 'done';
   const scale = useSharedValue(1);
@@ -54,7 +47,6 @@ export const TaskCard: React.FC<Props> = ({
   }));
 
   const handleToggle = () => {
-    if (readOnly) return;
     Haptics.selectionAsync().catch(() => undefined);
     scale.value = withSequence(
       withTiming(0.97, { duration: 90 }),
@@ -95,46 +87,17 @@ export const TaskCard: React.FC<Props> = ({
             <Pressable
               onPress={handleToggle}
               hitSlop={14}
-              disabled={readOnly}
-              style={[
-                styles.check,
-                done && styles.checkDone,
-                readOnly && styles.checkReadOnly,
-              ]}
+              style={[styles.check, done && styles.checkDone]}
             >
               {done && <Icon name="check" size={14} color={colors.text} />}
-              {readOnly && !done && (
-                <Icon
-                  name="chevronRight"
-                  size={12}
-                  color={colors.textInverseMuted}
-                />
-              )}
             </Pressable>
           </View>
 
-          {(timeRange || ownerLabel) && (
+          {timeRange && (
             <View style={styles.metaRow}>
-              {timeRange && (
-                <Text
-                  variant="footnote"
-                  color={colors.textInverseMuted}
-                >
-                  {timeRange}
-                </Text>
-              )}
-              {ownerLabel && (
-                <View style={styles.ownerPill}>
-                  {accentColor && (
-                    <View
-                      style={[styles.ownerDot, { backgroundColor: accentColor }]}
-                    />
-                  )}
-                  <Text variant="footnote" color={colors.textInverseMuted}>
-                    {ownerLabel}
-                  </Text>
-                </View>
-              )}
+              <Text variant="footnote" color={colors.textInverseMuted}>
+                {timeRange}
+              </Text>
             </View>
           )}
         </View>
@@ -207,25 +170,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textInverse,
     borderColor: colors.textInverse,
   },
-  checkReadOnly: {
-    borderStyle: 'dashed',
-    borderColor: 'rgba(246, 244, 236, 0.3)',
-  },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: spacing.md,
     gap: spacing.sm,
-  },
-  ownerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  ownerDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
   },
 });

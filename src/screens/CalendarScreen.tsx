@@ -3,7 +3,6 @@ import { Pressable, SectionList, StyleSheet, View } from 'react-native';
 import {
   addDays,
   format,
-  isSameDay,
   isToday,
   isTomorrow,
   isYesterday,
@@ -17,41 +16,22 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Icon, Screen, Text } from '@/components';
 import { colors, radius, spacing } from '@/theme';
 import { useTaskStore } from '@/store/useTaskStore';
-import { usePartnersStore } from '@/store/usePartnersStore';
 import type { Task } from '@/types';
 import type { MainTabParamList } from '@/navigation/types';
 
 /**
- * Minimal agenda calendar.
- *
- * There is intentionally NO month grid, NO week view, NO toggle —
- * the best minimal calendars (Things 3 "Upcoming", Fantastical's
- * list view, Linear's inbox) are just a vertical scroll of days
- * with their events, and that's exactly what this is.
- *
- * Design rules:
- *   - One column, grouped by day
- *   - Empty days are skipped entirely (no "nothing here" noise)
- *   - Today gets a small accent; relative labels for ±1 day
- *   - Each row is time + title + a small color dot (whose task)
- *   - Tapping any row opens the owl — the AI is the only "add" path
- *
- * The add-flow is deliberately unified: there is no "+" or
- * in-place new-event. If you want to add something, tell the owl.
- * That's the whole point of the app.
+ * Minimal agenda calendar. Vertical list of days; empty days drop.
+ * "Add a task" funnels through Ottley on the Home tab.
  */
 export const CalendarScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const tasks = useTaskStore((s) => s.tasks);
-  const colorFor = usePartnersStore((s) => s.colorFor);
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const listRef = useRef<SectionList<Task>>(null);
 
-  // Group dated tasks by calendar day, sorted chronologically.
-  // Only days with at least one task get a section — empty days drop.
   const sections = useMemo(() => buildAgenda(tasks), [tasks]);
 
-  const handleAskOwl = () => {
+  const handleAskOttley = () => {
     navigation.navigate('Home' as never);
   };
 
@@ -69,7 +49,6 @@ export const CalendarScreen: React.FC = () => {
 
   return (
     <Screen scroll={false}>
-      {/* Header — just the title and a small "today" pill */}
       <View style={styles.header}>
         <Text variant="largeTitle">Calendar</Text>
         <Pressable style={styles.todayPill} onPress={jumpToToday} hitSlop={8}>
@@ -80,7 +59,7 @@ export const CalendarScreen: React.FC = () => {
       </View>
 
       {sections.length === 0 ? (
-        <EmptyState onAsk={handleAskOwl} />
+        <EmptyState onAsk={handleAskOttley} />
       ) : (
         <SectionList
           ref={listRef}
@@ -90,7 +69,7 @@ export const CalendarScreen: React.FC = () => {
             <DayHeader date={parseISO(section.isoDate)} />
           )}
           renderItem={({ item }) => (
-            <AgendaRow task={item} accentColor={item.color ?? colorFor(item.ownerId)} />
+            <AgendaRow task={item} accentColor={item.color ?? colors.accent} />
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           SectionSeparatorComponent={() => <View style={{ height: spacing.md }} />}
@@ -103,24 +82,18 @@ export const CalendarScreen: React.FC = () => {
         />
       )}
 
-      {/* Persistent quick-ask bar: one tap → full owl conversation */}
       <Pressable
-        onPress={handleAskOwl}
+        onPress={handleAskOttley}
         style={[styles.askBar, { bottom: insets.bottom + 90 }]}
       >
         <Icon name="sparkle" size={16} color={colors.textInverse} />
         <Text variant="footnote" color={colors.textInverse} weight="500">
-          Tell the owl what's coming up…
+          Tell Ottley what's coming up…
         </Text>
       </Pressable>
     </Screen>
   );
 };
-
-/* -------------------------------------------------------------------------
- * Day section header
- * -------------------------------------------------------------------------
- */
 
 const DayHeader: React.FC<{ date: Date }> = ({ date }) => {
   const label = relativeDayLabel(date);
@@ -141,11 +114,6 @@ const DayHeader: React.FC<{ date: Date }> = ({ date }) => {
     </View>
   );
 };
-
-/* -------------------------------------------------------------------------
- * Single agenda row
- * -------------------------------------------------------------------------
- */
 
 interface RowProps {
   task: Task;
@@ -181,29 +149,19 @@ const AgendaRow: React.FC<RowProps> = ({ task, accentColor }) => {
   );
 };
 
-/* -------------------------------------------------------------------------
- * Empty state
- * -------------------------------------------------------------------------
- */
-
 const EmptyState: React.FC<{ onAsk: () => void }> = ({ onAsk }) => (
   <View style={styles.empty}>
     <Text variant="title2">Nothing on the horizon.</Text>
     <Text variant="subhead" style={{ marginTop: spacing.xs, textAlign: 'center' }}>
-      When you tell the owl about a deadline, it'll land here automatically.
+      Tell Ottley about a deadline and it'll land here automatically.
     </Text>
     <Pressable onPress={onAsk} style={styles.emptyCta}>
       <Text variant="headline" color={colors.textInverse}>
-        Ask the owl
+        Ask Ottley
       </Text>
     </Pressable>
   </View>
 );
-
-/* -------------------------------------------------------------------------
- * Helpers
- * -------------------------------------------------------------------------
- */
 
 interface AgendaSection {
   isoDate: string;
@@ -222,7 +180,6 @@ function buildAgenda(tasks: Task[]): AgendaSection[] {
     map.set(key, list);
   }
 
-  // Sort keys ascending, then sort tasks within each day by time.
   return Array.from(map.entries())
     .map<AgendaSection>(([isoDate, list]) => ({
       isoDate: parseISO(`${isoDate}T00:00:00`).toISOString(),
@@ -260,11 +217,6 @@ function relativeDayLabel(date: Date): string {
   }
   return format(date, 'EEE');
 }
-
-/* -------------------------------------------------------------------------
- * Styles
- * -------------------------------------------------------------------------
- */
 
 const styles = StyleSheet.create({
   header: {

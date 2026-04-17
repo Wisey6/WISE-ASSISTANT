@@ -1,17 +1,14 @@
 /**
- * Thin Google Gemini API client — one POST to generativelanguage with tool use.
- *
- * Used by the owl to actually converse, not just parse. When the API
- * key is missing we fall back to the local deterministic handler in
- * ai.ts, so the app still works offline / unconfigured.
+ * Thin Google Gemini API client. When the API key is missing we fall
+ * back to the local deterministic handler in ai.ts, so the app still
+ * works offline / unconfigured.
  *
  * Security note: the key ends up in the JS bundle because it's read
- * via Expo's EXPO_PUBLIC_ env prefix. That's fine for a private app
- * shared between one or two people — DO NOT publish the app as-is.
+ * via Expo's EXPO_PUBLIC_ env prefix. Fine for a personal app — do
+ * NOT publish as-is.
  */
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
-const MODEL = 'gemini-2.0-flash';
 const MAX_TOKENS = 800;
 
 const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY ?? '';
@@ -36,15 +33,6 @@ export interface ClaudeResult {
   toolCalls: ToolCall[];
 }
 
-/* -------------------------------------------------------------------------
- * Tools
- *
- * Gemini calls these when it wants the app to do something. Our code
- * then executes them locally — creating tasks, scheduling recurrences,
- * offering follow-up chips.
- * -------------------------------------------------------------------------
- */
-
 const TOOLS = {
   type: 'function',
   function_declarations: [
@@ -67,7 +55,7 @@ const TOOLS = {
           startAt: {
             type: 'string',
             description:
-              'ISO 8601 start time. Use this (with endAt) when the task runs over a time block, like an appointment or meeting.',
+              'ISO 8601 start time. Use this (with endAt) when the task runs over a time block.',
           },
           endAt: {
             type: 'string',
@@ -76,22 +64,12 @@ const TOOLS = {
           priority: {
             type: 'string',
             enum: ['low', 'medium', 'high'],
-            description: 'Default medium. Use high when the user sounds stressed or says urgent/ASAP/tight.',
           },
           estimatedMinutes: {
             type: 'number',
-            description: 'Rough guess of how long it will take, in minutes.',
           },
           notes: {
             type: 'string',
-            description:
-              "Extra context you've collected — manager name, deliverables, who's joining, etc.",
-          },
-          owner: {
-            type: 'string',
-            enum: ['me', 'partner'],
-            description:
-              "Whose task this is. Default 'me'. Switch to 'partner' if the user says their partner's name or 'she'/'he'/'they'.",
           },
         },
         required: ['title'],
@@ -100,7 +78,7 @@ const TOOLS = {
     {
       name: 'create_recurring_schedule',
       description:
-        'Create a repeating weekly schedule — e.g. a work schedule, a gym routine, a class. Materializes as time-blocks on the calendar.',
+        'Create a repeating weekly schedule — e.g. a work schedule, a gym routine, a class.',
       parameters: {
         type: 'object',
         properties: {
@@ -112,22 +90,9 @@ const TOOLS = {
               enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
             },
           },
-          startTime: {
-            type: 'string',
-            description: '24-hour HH:MM start time, e.g. "09:00".',
-          },
-          endTime: {
-            type: 'string',
-            description: '24-hour HH:MM end time, e.g. "17:00".',
-          },
-          weeksAhead: {
-            type: 'number',
-            description: 'How many weeks forward to project. Default 4.',
-          },
-          owner: {
-            type: 'string',
-            enum: ['me', 'partner'],
-          },
+          startTime: { type: 'string' },
+          endTime: { type: 'string' },
+          weeksAhead: { type: 'number' },
         },
         required: ['title', 'days', 'startTime', 'endTime'],
       },
@@ -135,14 +100,13 @@ const TOOLS = {
     {
       name: 'suggest_replies',
       description:
-        "Offer 2-4 short tap-to-reply chips. Use only when there's an obvious next step the user might want — skip it on routine acknowledgements.",
+        "Offer 2-4 short tap-to-reply chips when there's an obvious next step.",
       parameters: {
         type: 'object',
         properties: {
           suggestions: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Short phrases, ideally <4 words each.',
           },
         },
         required: ['suggestions'],
@@ -151,16 +115,7 @@ const TOOLS = {
   ],
 };
 
-/* -------------------------------------------------------------------------
- * System prompt
- * -------------------------------------------------------------------------
- */
-
-function buildSystemPrompt(
-  now: Date,
-  userName: string,
-  partnerName: string,
-): string {
+function buildSystemPrompt(now: Date, userName: string): string {
   const today = now.toLocaleDateString(undefined, {
     weekday: 'long',
     year: 'numeric',
@@ -172,79 +127,45 @@ function buildSystemPrompt(
     minute: '2-digit',
   });
 
-  return `You are Wise — a warm, intuitive owl assistant helping ${userName} (the person you're talking to right now) and their partner ${partnerName}. You live inside a small iPhone app shaped like a cute owl. This is a private app for two people only.
+  return `You are Ottley — ${userName}'s personal assistant. Today is ${today}, and it's ${time}.
 
-Today is ${today}. Current local time is ${time}.
-
-VOICE
-- Warm, playful, genuinely friendly. You have personality — you're not a form.
-- Reply to small talk naturally. "hi" → "Hey ${userName}! What's up?", NOT "Got it, hi."
-- Mostly 1-2 sentences. Occasionally 3 when you're reacting to something.
-- When ${userName} sounds stressed or overwhelmed, acknowledge it FIRST with a kind word, then offer a practical next step.
-- When you commit a task, say what you did in one casual sentence — don't recite every field back.
-- Make small suggestions when helpful ("Want me to add a reminder the day before?"). Don't push.
-- React to what they say. If they mention they're tired, a long day, a big event — say something human about it.
+PERSONALITY
+- Warm, dry, lightly sarcastic. Like a clever friend who's great at logistics and occasionally throws in a one-liner.
+- You take ${userName}'s work seriously. You take yourself significantly less seriously.
+- You can be playful about the absurdity of to-do lists, deadlines, and calendar Tetris — but you never mock ${userName} for what's on their plate.
+- Occasional dry jokes, bad puns, or a deadpan observation are welcome. Don't force them — if nothing lands, stay tidy.
+- Mostly 1-2 sentences. Three when you're actually reacting to something. Never a wall of text.
 
 WHAT YOU DO
-- Capture tasks from casual messages using create_task. ALWAYS give each task a descriptive, specific title.
-- When they describe a recurring routine ("I work weekdays 9-5", "gym Mon/Wed/Fri"), use create_recurring_schedule.
-- Proactively fill sensible defaults (priority, estimate) when obvious — don't ask about things you can infer.
-- Use suggest_replies for obvious next steps only ("Add another", "Set a reminder", "Any other errands?").
-- Help them think ahead. If they say "I have a big week", ask what's on it and help break it down.
+- Capture tasks with create_task. Always give them a specific title (never "New task" / "Untitled").
+- Recurring routines → create_recurring_schedule.
+- Quietly fill obvious defaults (priority, estimate) without asking.
+- Use suggest_replies for clear next steps. Skip it for small talk.
 
-TASK NAMING — CRITICAL
-- NEVER use placeholder titles like "New task", "Untitled", "Task", or "Work". Your task will be rejected.
-- Build a title from what they actually said. "I need to buy groceries" → "Buy groceries". "Meeting with Jess at 3" → "Meeting with Jess".
-- If they give you only a vague opener like "add a task" or "I have work", DO NOT call create_task yet. Ask them what the task is first, in a natural way.
-
-MISSING INFO — ASK SMART FOLLOW-UPS
-When ${userName} mentions work, a routine, or an appointment but leaves out key details, ask ONE focused follow-up covering what's genuinely needed. Examples:
-- "I have work every day this week" → "Nice — what time, and where are you working?" (you need start/end time + location before you can schedule it)
-- "I have a meeting tomorrow" → "What's the meeting about and what time?"
-- "Dentist on Thursday" → "What time's the appointment?"
-- "Pick up groceries" → just commit it as a simple task, no need to interrogate
-
-Don't ask more than one question at a time. Don't ask about things you don't actually need.
-
-OWNERSHIP
-- "${userName}" is the one talking to you — default owner is "me".
-- If they mention "${partnerName}", or say "she/he/they" referring to ${partnerName}, owner is "partner".
-- If genuinely ambiguous, ask: "For you or ${partnerName}?"
-- IMPORTANT: On this phone, only ${userName} can add/edit tasks. If ${userName} tries to add something for ${partnerName}, that's fine — you can capture it — but remind them gently that ${partnerName} will need to complete it from their own phone.
+MISSING INFO
+If a request is vague ("I have work this week"), ask ONE focused follow-up. Don't interrogate. Never more than one question at a time.
 
 DATE RESOLUTION
-- All dates/times in ISO 8601, local time (no Z suffix if you don't know the offset — a plain ISO string is fine).
-- Resolve every relative phrase yourself: "tomorrow", "friday", "next week", "15th may", "in 3 days".
-- If a past date was mentioned (e.g. "15 jan" and it's already June), assume next year.
-- For a deadline without a time, use 17:00.
-- For an appointment with a time range, use startAt + endAt and leave dueAt empty.
+- ISO 8601 local time (no Z if you don't know the offset).
+- Resolve relative phrases yourself ("tomorrow", "friday", "in 3 days", "15 may"). If a date would be in the past, roll to next year.
+- Deadline without a time → use 17:00.
+- Appointment with a time range → startAt + endAt, leave dueAt empty.
 
-STAY ON TASK (but be human about it)
-You're not a general-purpose chatbot — you exist for tasks, schedules, and briefings for ${userName} and ${partnerName}. But friendly small talk is allowed, and encouraged. If someone asks you to write code or debate philosophy, gently steer back: "Ha, not my thing — but want me to note anything for today?"`;
+STAY IN LANE
+You exist for ${userName}'s tasks, schedule, and briefings. Small talk is fine. If someone asks you to write code or write their wedding vows, gently deflect: "Above my pay grade — but want me to block out time for it?"`;
 }
-
-/* -------------------------------------------------------------------------
- * The call itself
- * -------------------------------------------------------------------------
- */
 
 export async function callClaude(args: {
   messages: ClaudeMessage[];
   userName: string;
-  partnerName: string;
   now?: Date;
 }): Promise<ClaudeResult> {
   if (!API_KEY) {
     throw new Error('NO_API_KEY');
   }
 
-  const system = buildSystemPrompt(
-    args.now ?? new Date(),
-    args.userName,
-    args.partnerName,
-  );
+  const system = buildSystemPrompt(args.now ?? new Date(), args.userName);
 
-  // Convert messages to Google Gemini format
   const contents = args.messages.map((msg) => ({
     role: msg.role === 'user' ? 'user' : 'model',
     parts: [{ text: msg.content }],
@@ -252,18 +173,12 @@ export async function callClaude(args: {
 
   const response = await fetch(`${ENDPOINT}?key=${API_KEY}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      system_instruction: {
-        parts: [{ text: system }],
-      },
+      system_instruction: { parts: [{ text: system }] },
       contents,
       tools: [TOOLS],
-      generation_config: {
-        max_output_tokens: MAX_TOKENS,
-      },
+      generation_config: { max_output_tokens: MAX_TOKENS },
     }),
   });
 

@@ -4,64 +4,43 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 
 import {
   ChatComposer,
-  Icon,
-  OwlCharacter,
   SuggestionChips,
   Text,
-  type OwlState,
 } from '@/components';
-import { colors, radius, spacing, useUserTheme } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 import { useAssistantStore } from '@/store/useAssistantStore';
 import { useTaskStore } from '@/store/useTaskStore';
-import { otherUserId, useUserStore } from '@/store/useUserStore';
+import { useUserStore } from '@/store/useUserStore';
 import { handleUserTurn } from '@/services/ai';
 import { useVoiceInput } from '@/services/voice';
-import type { AssistantMessage, UserId } from '@/types';
+import type { AssistantMessage } from '@/types';
 
 /**
- * Home is the primary surface — owl + chat.
- *
- * - Empty state: big owl centered, welcoming prompt, suggestion chips
- *   so the user has a clear "what can I say?" to start with.
- * - Active conversation: owl shrinks into the header, chat thread
- *   scrolls normally, composer pinned to the keyboard.
- *
- * Everything flows through handleUserTurn so slot-fill, recurrence,
- * and direct task creation all go through the same pipeline.
+ * Home is Ottley — the chat assistant. No owl, no mascot: just a clean
+ * header with his name and status, the conversation below, and a
+ * composer pinned to the bottom. Ottley handles everything in the
+ * app's assistant pipeline (tasks, schedules, briefings, jokes).
  */
 export const HomeScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const messages = useAssistantStore((s) => s.messages);
   const pendingIntent = useAssistantStore((s) => s.pendingIntent);
   const isThinking = useAssistantStore((s) => s.isThinking);
-  const owlMood = useAssistantStore((s) => s.owlMood);
   const appendUser = useAssistantStore((s) => s.appendUser);
   const appendAssistant = useAssistantStore((s) => s.appendAssistant);
   const setThinking = useAssistantStore((s) => s.setThinking);
   const setPendingIntent = useAssistantStore((s) => s.setPendingIntent);
-  const setOwlMood = useAssistantStore((s) => s.setOwlMood);
 
   const addTasksFromDrafts = useTaskStore((s) => s.addTasksFromDrafts);
   const addRecurringSchedule = useTaskStore((s) => s.addRecurringSchedule);
   const user = useUserStore((s) => s.user);
-  const currentUserId = useUserStore((s) => s.currentUserId);
-  const palette = useUserTheme();
-  const meColor = palette.accent;
-  // The owl variant follows the current user — pink for Sarah, blue for Tyler.
-  const owlVariant: UserId = currentUserId ?? 'sarah';
 
   const voice = useVoiceInput();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -82,49 +61,31 @@ export const HomeScreen: React.FC = () => {
 
   const hasConversation = messages.length > 1;
 
-  // Effective owl state: voice recording > thinking > store mood
-  const owlState = voice.isRecording
-    ? 'listening'
+  const statusLabel = voice.isRecording
+    ? 'Listening…'
     : isThinking
-    ? 'thinking'
-    : owlMood;
+    ? 'Thinking…'
+    : 'Ready when you are';
 
   const handleSubmit = useCallback(
     async (text: string) => {
       appendUser(text);
       setThinking(true);
-      setOwlMood('thinking');
-      // Yield to the UI so the user bubble appears before "thinking".
-      await new Promise((r) => setTimeout(r, 320));
+      await new Promise((r) => setTimeout(r, 250));
 
-      // Grab the latest history from the store (so the new user
-      // message is included) — Claude needs the full conversation.
       const latestHistory = useAssistantStore.getState().messages;
       const response = await handleUserTurn(text, latestHistory, pendingIntent);
-
-      // Figure out which owner id to attribute new tasks to. Default
-      // is the current phone's user; Claude can hint at "partner" via
-      // ownerHint — but because cross-user writes are blocked by the
-      // task store, "partner" drafts get dropped and the owl should
-      // have reminded the user that the partner needs to add it
-      // themselves (per the system prompt).
-      const currentId = (currentUserId ?? 'sarah') as UserId;
-      const partnerId = otherUserId(currentId);
-      const targetOwner =
-        response.ownerHint === 'partner' ? partnerId : currentId;
 
       let createdIds: string[] = [];
 
       if (response.tasks && response.tasks.length > 0) {
-        const created = addTasksFromDrafts(response.tasks, targetOwner);
+        const created = addTasksFromDrafts(response.tasks);
         createdIds = created.map((t) => t.id);
       }
 
       if (response.recurrence) {
         const created = addRecurringSchedule(response.recurrence, {
           title: response.tasks?.[0]?.title ?? 'Work',
-          ownerId: targetOwner,
-          color: meColor,
         });
         createdIds.push(...created.map((t) => t.id));
       }
@@ -138,7 +99,6 @@ export const HomeScreen: React.FC = () => {
         suggestions: response.suggestions,
       });
 
-      setOwlMood(response.mood ?? 'idle');
       setThinking(false);
 
       requestAnimationFrame(() => {
@@ -149,20 +109,14 @@ export const HomeScreen: React.FC = () => {
       appendUser,
       appendAssistant,
       setThinking,
-      setOwlMood,
       setPendingIntent,
       addTasksFromDrafts,
       addRecurringSchedule,
       pendingIntent,
-      meColor,
-      currentUserId,
     ],
   );
 
   const handleVoice = useCallback(async () => {
-    // If we're currently recording, stop and submit a placeholder.
-    // Real speech-to-text requires a backend (e.g. Whisper). For now
-    // we just acknowledge the recording so the mic at least works.
     if (voice.isRecording) {
       const result = await voice.stop();
       if (result && result.durationMs > 500) {
@@ -185,8 +139,6 @@ export const HomeScreen: React.FC = () => {
     [handleSubmit],
   );
 
-  // The latest assistant message (if it has suggestion chips) —
-  // we render those above the composer for quick taps.
   const lastMsg = messages[messages.length - 1];
   const activeSuggestions =
     lastMsg?.role === 'assistant' && lastMsg.suggestions?.length
@@ -199,11 +151,10 @@ export const HomeScreen: React.FC = () => {
       style={styles.root}
       keyboardVerticalOffset={0}
     >
-      <HeaderHero
+      <OttleyHeader
         hasConversation={hasConversation}
-        owlState={owlState}
-        owlVariant={owlVariant}
-        name={user?.name ?? 'there'}
+        statusLabel={statusLabel}
+        name={user.name}
         insetTop={insets.top}
       />
 
@@ -234,94 +185,59 @@ export const HomeScreen: React.FC = () => {
           onSubmit={handleSubmit}
           onVoicePress={handleVoice}
           isRecording={voice.isRecording}
+          placeholder="Ask Ottley anything…"
         />
       </View>
     </KeyboardAvoidingView>
   );
 };
 
-/* -------------------------------------------------------------------------
- * Header hero
- * -------------------------------------------------------------------------
- */
-
 interface HeaderProps {
   hasConversation: boolean;
-  owlState: OwlState;
-  owlVariant: UserId;
+  statusLabel: string;
   name: string;
   insetTop: number;
 }
 
-const HeaderHero: React.FC<HeaderProps> = ({
+const OttleyHeader: React.FC<HeaderProps> = ({
   hasConversation,
-  owlState,
-  owlVariant,
+  statusLabel,
   name,
   insetTop,
 }) => {
-  const compact = useSharedValue(hasConversation ? 1 : 0);
-
-  useEffect(() => {
-    compact.value = withTiming(hasConversation ? 1 : 0, { duration: 350 });
-  }, [hasConversation, compact]);
-
-  const wrapStyle = useAnimatedStyle(() => ({
-    paddingVertical: spacing.md + (1 - compact.value) * 32,
-  }));
-
   if (hasConversation) {
     return (
-      <Animated.View
-        style={[styles.hero, wrapStyle, { paddingTop: insetTop + spacing.sm }]}
-      >
-        <View style={styles.heroCompact}>
-          <OwlCharacter size={64} state={owlState} variant={owlVariant} />
-          <View style={{ marginLeft: spacing.md, flex: 1 }}>
-            <Text variant="caption">YOUR ASSISTANT</Text>
-            <Text variant="title3">{stateLabel(owlState)}</Text>
-          </View>
+      <View style={[styles.hero, styles.heroCompactWrap, { paddingTop: insetTop + spacing.sm }]}>
+        <View style={styles.avatar}>
+          <Text variant="title3" color={colors.textInverse}>
+            O
+          </Text>
         </View>
-      </Animated.View>
+        <View style={{ flex: 1 }}>
+          <Text variant="caption">OTTLEY</Text>
+          <Text variant="title3">{statusLabel}</Text>
+        </View>
+      </View>
     );
   }
-
   return (
-    <Animated.View
-      style={[styles.hero, wrapStyle, { paddingTop: insetTop + spacing.sm }]}
+    <View
+      style={[styles.hero, styles.heroFullWrap, { paddingTop: insetTop + spacing.xl }]}
     >
-      <View style={styles.heroFull}>
-        <OwlCharacter size={200} state={owlState} variant={owlVariant} />
-        <Text variant="title1" style={styles.heroTitle}>
-          Hey {name}.
-        </Text>
-        <Text variant="subhead" style={styles.heroSub}>
-          Tell me what's on your plate — I'll sort the rest.
+      <View style={styles.avatarLarge}>
+        <Text variant="largeTitle" color={colors.textInverse}>
+          O
         </Text>
       </View>
-    </Animated.View>
+      <Text variant="largeTitle" style={styles.heroTitle}>
+        Hey {name}.
+      </Text>
+      <Text variant="subhead" style={styles.heroSub}>
+        It's Ottley. What are we ignoring today?
+      </Text>
+    </View>
   );
 };
-
-function stateLabel(state: string): string {
-  switch (state) {
-    case 'listening':
-      return 'Listening…';
-    case 'thinking':
-      return 'Thinking…';
-    case 'happy':
-      return 'Got it';
-    case 'sleep':
-      return 'Resting';
-    default:
-      return 'Ready';
-  }
-}
-
-/* -------------------------------------------------------------------------
- * Inline message bubble (flatter version than /components/MessageBubble)
- * -------------------------------------------------------------------------
- */
 
 const MessageBubble: React.FC<{ message: AssistantMessage }> = ({ message }) => {
   const mine = message.role === 'user';
@@ -350,25 +266,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   hero: {
-    alignItems: 'center',
     paddingHorizontal: spacing.lg,
   },
-  heroFull: {
+  heroFullWrap: {
     alignItems: 'center',
-    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+  },
+  heroCompactWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceInverse,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarLarge: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: colors.surfaceInverse,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
   },
   heroTitle: {
-    marginTop: spacing.lg,
     textAlign: 'center',
   },
   heroSub: {
     marginTop: spacing.xs,
     textAlign: 'center',
-  },
-  heroCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'stretch',
   },
   listContent: {
     paddingHorizontal: spacing.lg,

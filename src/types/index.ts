@@ -4,11 +4,6 @@ export type TaskStatus = 'todo' | 'done';
 
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
-/**
- * Rough category the assistant detects from a message. Drives which
- * follow-up questions the slot-filler asks — work tasks want a
- * manager + deliverables, a gym session doesn't.
- */
 export type TaskContext =
   | 'work'
   | 'personal'
@@ -34,7 +29,6 @@ export interface Task {
 
   priority: Priority;
   status: TaskStatus;
-  ownerId: string;
   color?: string;
 
   estimatedMinutes?: number;
@@ -49,24 +43,8 @@ export interface Task {
   completedAt?: string | null;
 }
 
-export interface Partner {
-  id: string;
-  name: string;
-  color: string;
-}
-
-/**
- * This app has exactly two users: Sarah and Tyler. There is no
- * general-purpose account system — each phone picks one once and
- * that becomes their identity forever.
- */
-export type UserId = 'sarah' | 'tyler';
-
 export interface User {
-  id: UserId;
   name: string;
-  /** Pink for Sarah, blue for Tyler. */
-  color: string;
 }
 
 export interface AssistantMessage {
@@ -85,8 +63,7 @@ export type TaskSlot =
   | 'dueAt'
   | 'estimatedMinutes'
   | 'manager'
-  | 'deliverables'
-  | 'who';
+  | 'deliverables';
 
 export interface PendingIntent {
   kind: IntentKind;
@@ -94,8 +71,6 @@ export interface PendingIntent {
   draft: Partial<Task>;
   pending: TaskSlot[];
   currentSlot: TaskSlot | null;
-  /** ownerId the task will go under (me or a partner id). */
-  ownerId?: string;
 }
 
 export interface ParsedTaskDraft {

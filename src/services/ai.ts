@@ -24,12 +24,10 @@ import type {
   Task,
   TaskContext,
   TaskSlot,
-  UserId,
   Weekday,
 } from '@/types';
 import { toISO } from '@/utils/date';
-import { userPalettes } from '@/theme';
-import { useUserStore, otherUserId } from '@/store/useUserStore';
+import { useUserStore } from '@/store/useUserStore';
 import { callClaude, hasApiKey, type ClaudeMessage } from './claude';
 
 /**
@@ -68,10 +66,6 @@ export interface AssistantResponse {
   nextIntent?: PendingIntent | null;
   /** Whether the assistant thinks the user is overcommitted. */
   overloaded?: boolean;
-  /** How the owl should feel while "speaking". */
-  mood?: 'idle' | 'talking' | 'thinking' | 'happy';
-  /** Which owner the new tasks/recurrence should be attributed to. */
-  ownerHint?: 'me' | 'partner';
 }
 
 /**
@@ -105,8 +99,7 @@ export async function handleUserTurn(
         ...local,
         reply:
           local.reply ||
-          "I'm having trouble reaching my brain — falling back to my simpler parser for this one.",
-        mood: local.mood ?? 'idle',
+          "My wifi brain is on strike — falling back to the regex one for this one.",
       };
     }
   }
@@ -123,40 +116,28 @@ async function handleTurnLocally(
 ): Promise<AssistantResponse> {
   const text = input.trim();
   if (!text) {
-    return {
-      reply: "I didn't catch that — try again?",
-      mood: 'idle',
-    };
+    return { reply: "Didn't catch that — try again?" };
   }
 
-  // If the assistant is in the middle of filling a task's slots, route
-  // this turn into the slot-filler first.
   if (pending) {
     return continuePendingIntent(text, pending);
   }
 
-  // Recurring schedule? ("I work mon/tue/thu/fri 9-5")
   const recurrence = parseRecurrence(text);
   if (recurrence) {
     return {
       reply: buildRecurrenceConfirmation(text, recurrence),
       recurrence,
-      mood: 'happy',
       suggestions: ['Add lunch break', 'Mark Wednesdays as free', 'Thanks'],
     };
   }
 
-  // Does the opener read like "I have a new task at work" but lacks
-  // the specifics? Start a slot-fill conversation.
   if (looksLikeNewTaskOpener(text)) {
     return startNewTaskIntent(text);
   }
 
-  // Otherwise: try to parse one-or-more concrete tasks.
   const drafts = extractDrafts(text);
   if (drafts.length === 0) {
-    // Instead of "couldn't find a task" — treat this like a new-task
-    // opener and pull the user into the slot-filler.
     return startNewTaskIntent(text);
   }
 
@@ -165,7 +146,6 @@ async function handleTurnLocally(
     reply: buildDraftSummary(drafts, overloaded),
     tasks: drafts,
     overloaded,
-    mood: overloaded ? 'thinking' : 'happy',
     suggestions: overloaded
       ? ['Move low-priority to next week', 'Leave it', 'Anything else?']
       : ['Add another', 'Set a reminder', 'Thanks'],
@@ -189,19 +169,14 @@ async function handleTurnWithClaude(
 ): Promise<AssistantResponse> {
   const text = input.trim();
   if (!text) {
-    return { reply: "I didn't catch that — try again?", mood: 'idle' };
+    return { reply: "Didn't catch that — try again?" };
   }
 
-  // Build the message list Claude expects. Keep the last ~20 turns
-  // for context — beyond that the cost climbs and the owl starts
-  // repeating itself.
   const recent = history.slice(-20);
   const messages: ClaudeMessage[] = recent
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .map((m) => ({ role: m.role, content: m.text }));
 
-  // If the last message in history isn't already this turn (edge
-  // case: caller forgot to append), add it so Claude sees the input.
   if (
     messages.length === 0 ||
     messages[messages.length - 1].role !== 'user' ||
@@ -210,23 +185,13 @@ async function handleTurnWithClaude(
     messages.push({ role: 'user', content: text });
   }
 
-  // Pull the current user identity so Claude knows who it's talking to
-  // and which one of the pair is the "partner" for ownership decisions.
-  const currentUserId = useUserStore.getState().currentUserId ?? 'sarah';
-  const partnerId = otherUserId(currentUserId);
-  const userName = userPalettes[currentUserId].name;
-  const partnerName = userPalettes[partnerId].name;
+  const userName = useUserStore.getState().user.name;
 
-  const result = await callClaude({
-    messages,
-    userName,
-    partnerName,
-  });
+  const result = await callClaude({ messages, userName });
 
   const tasks: ParsedTaskDraft[] = [];
   let recurrence: Recurrence | undefined;
   let suggestions: string[] | undefined;
-  let partnerOwned = false;
 
   for (const call of result.toolCalls) {
     if (call.name === 'create_task') {
@@ -238,12 +203,7 @@ async function handleTurnWithClaude(
         priority?: Priority;
         estimatedMinutes?: number;
         notes?: string;
-        owner?: 'me' | 'partner';
       };
-      // Reject nameless tasks — the owl is instructed to always name
-      // them. If the model slips and sends "New task" / "Untitled" /
-      // empty, skip the tool call entirely so the user is forced to
-      // describe it in words.
       const rawTitle = (t.title ?? '').trim();
       if (!rawTitle || /^(new task|untitled|task)$/i.test(rawTitle)) {
         continue;
@@ -257,7 +217,6 @@ async function handleTurnWithClaude(
         estimatedMinutes: t.estimatedMinutes,
         notes: t.notes,
       });
-      if (t.owner === 'partner') partnerOwned = true;
     } else if (call.name === 'create_recurring_schedule') {
       const r = call.input as {
         title?: string;
@@ -285,16 +244,11 @@ async function handleTurnWithClaude(
   const createdSomething = tasks.length > 0 || !!recurrence;
 
   return {
-    reply: result.text || (createdSomething ? 'Done.' : 'Hm, say that again?'),
+    reply: result.text || (createdSomething ? 'Done.' : "Hm, say that again?"),
     tasks: tasks.length > 0 ? tasks : undefined,
     recurrence,
     suggestions,
-    mood: createdSomething ? 'happy' : 'idle',
-    nextIntent: null, // Claude handles follow-ups naturally in conversation
-    // Partner ownership is surfaced via a flag for the caller to use;
-    // the store's addTasksFromDrafts takes an explicit ownerId so the
-    // screen picks between 'me' and the partner id based on this.
-    ownerHint: partnerOwned ? 'partner' : 'me',
+    nextIntent: null,
   };
 }
 
@@ -389,7 +343,6 @@ function startNewTaskIntent(text: string): AssistantResponse {
   return {
     reply: questionFor(current, draft, context),
     suggestions: suggestionsFor(current, context),
-    mood: 'thinking',
     nextIntent: {
       kind: 'new-task',
       context,
@@ -419,9 +372,8 @@ function continuePendingIntent(
   // The user can always bail out.
   if (/\b(cancel|stop|never ?mind|forget it)\b/i.test(text)) {
     return {
-      reply: "No problem — I've dropped it.",
+      reply: "No problem — dropped it.",
       nextIntent: null,
-      mood: 'idle',
     };
   }
 
@@ -450,7 +402,6 @@ function continuePendingIntent(
     return {
       reply: questionFor(next, draft, context),
       suggestions: [...suggestionsFor(next, context), 'Skip'],
-      mood: 'thinking',
       nextIntent: {
         kind: pending.kind,
         context,
@@ -468,7 +419,6 @@ function continuePendingIntent(
   return {
     reply: questionFor(next, draft, context),
     suggestions: suggestionsFor(next, context),
-    mood: 'thinking',
     nextIntent: {
       kind: pending.kind,
       context,
@@ -491,7 +441,6 @@ function commitDraft(draft: Partial<Task>): AssistantResponse {
     reply: buildCommitMessage(finalDraft, draft),
     tasks: [finalDraft],
     nextIntent: null,
-    mood: 'happy',
     suggestions: ['Add another', "That's it", 'Anything urgent?'],
   };
 }
@@ -508,8 +457,6 @@ function isSlotMissing(draft: Partial<Task>, slot: TaskSlot): boolean {
       return !draft.manager;
     case 'deliverables':
       return !draft.deliverables;
-    case 'who':
-      return false; // handled separately — not asked in the main flow
   }
 }
 
@@ -617,9 +564,6 @@ function questionFor(
 
     case 'deliverables':
       return 'What do you need to hand over at the end? (or skip)';
-
-    case 'who':
-      return 'Whose task is this — yours or your partner\'s?';
   }
 }
 
@@ -639,8 +583,6 @@ function suggestionsFor(slot: TaskSlot, context: TaskContext): string[] {
       return [];
     case 'deliverables':
       return [];
-    case 'who':
-      return ['Mine', "Partner's"];
   }
 }
 
@@ -993,16 +935,13 @@ function buildDraftSummary(
 
 export interface BriefingArgs {
   name: string;
-  partnerName?: string | null;
   myTasks: Task[];
-  partnerTasks: Task[];
   now?: Date;
 }
 
 export interface DailyBriefing {
   greeting: string;
   myLines: string[];
-  partnerLines: string[];
   oneLiner: string;
 }
 
@@ -1011,28 +950,18 @@ export function buildDailyBriefing(args: BriefingArgs): DailyBriefing {
   const today = startOfDay(now);
 
   const myToday = filterForToday(args.myTasks, today);
-  const partnerToday = filterForToday(args.partnerTasks, today);
 
   const myLines = myToday.length === 0
     ? ['Nothing on the books — enjoy the breathing room.']
     : myToday.map((t) => lineFor(t));
 
-  const partnerLines = partnerToday.length === 0
-    ? [args.partnerName
-        ? `${args.partnerName} is clear today.`
-        : 'Your partner is clear today.']
-    : partnerToday.map((t) => lineFor(t));
-
   const greeting = `Morning, ${args.name}.`;
-  const summary: string[] = [];
-  if (myToday.length > 0)
-    summary.push(`${myToday.length} on your plate`);
-  if (partnerToday.length > 0 && args.partnerName)
-    summary.push(`${partnerToday.length} on ${args.partnerName}'s`);
   const oneLiner =
-    summary.length > 0 ? `${summary.join(' · ')}.` : 'Today is wide open.';
+    myToday.length > 0
+      ? `${myToday.length} on your plate.`
+      : 'Today is wide open.';
 
-  return { greeting, myLines, partnerLines, oneLiner };
+  return { greeting, myLines, oneLiner };
 }
 
 function filterForToday(tasks: Task[], today: Date): Task[] {

@@ -1,9 +1,10 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { useNavigation } from '@react-navigation/native';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import {
+  createBottomTabNavigator,
+  type BottomTabBarProps,
+} from '@react-navigation/bottom-tabs';
 
 import { colors, radius, shadows, spacing } from '@/theme';
 import { DashboardScreen } from '@/screens/DashboardScreen';
@@ -48,20 +49,13 @@ export const MainTabs: React.FC = () => {
  * -------------------------------------------------------------------------
  */
 
-type Navigation = BottomTabNavigationProp<MainTabParamList>;
-
-interface BarProps {
-  state: { index: number; routeNames: string[] };
-  navigation: Navigation;
-}
-
 const BAR_ROUTES: { key: keyof MainTabParamList; icon: IconName }[] = [
   { key: 'Dashboard', icon: 'dashboard' },
   { key: 'Home', icon: 'home' },
   { key: 'Profile', icon: 'person' },
 ];
 
-const FloatingBar: React.FC<BarProps> = ({ state, navigation }) => {
+const FloatingBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
   const insets = useSafeAreaInsets();
   const bottom = Math.max(spacing.md, insets.bottom);
 

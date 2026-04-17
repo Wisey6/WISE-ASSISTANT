@@ -11,31 +11,16 @@ import {
 import { Icon, Screen, TaskCard, Text } from '@/components';
 import { colors, radius, spacing } from '@/theme';
 import { useTaskStore } from '@/store/useTaskStore';
-import { usePartnersStore } from '@/store/usePartnersStore';
-import { otherUserId, useUserStore } from '@/store/useUserStore';
-import type { Task, UserId } from '@/types';
-
-type Filter = 'mine' | 'partner' | 'all';
 
 /**
- * Tasks — the list-of-cards view. Header shows a scrollable week
- * strip (the reference style), then a filter row (mine / partner /
- * all), then the stacked black task cards.
+ * Tasks — day view. A scrollable week strip picks the day, then a
+ * simple stack of task cards for whatever falls on it.
  */
 export const TasksScreen: React.FC = () => {
   const tasks = useTaskStore((s) => s.tasks);
   const toggleTask = useTaskStore((s) => s.toggleTask);
-  const colorFor = usePartnersStore((s) => s.colorFor);
-  const nameFor = usePartnersStore((s) => s.nameFor);
-  const user = useUserStore((s) => s.user);
-  const currentUserId = useUserStore((s) => s.currentUserId);
 
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
-  const [filter, setFilter] = useState<Filter>('all');
-
-  const myId: UserId = (currentUserId ?? 'sarah') as UserId;
-  const partnerId: UserId = otherUserId(myId);
-  const partnerName = nameFor(partnerId);
 
   const weekStrip = useMemo(() => {
     const today = startOfDay(new Date());
@@ -49,24 +34,15 @@ export const TasksScreen: React.FC = () => {
       return isSameDay(new Date(when), selectedDate);
     });
 
-    const filtered = relevant.filter((t) => {
-      // Legacy alias: 'me' resolves to the current user.
-      const owner = t.ownerId === 'me' || t.ownerId === 'local-user' ? myId : t.ownerId;
-      if (filter === 'mine') return owner === myId;
-      if (filter === 'partner') return owner === partnerId;
-      return true;
-    });
-
-    return filtered.sort((a, b) => {
+    return relevant.sort((a, b) => {
       const aw = new Date(a.startAt ?? a.dueAt ?? 0).getTime();
       const bw = new Date(b.startAt ?? b.dueAt ?? 0).getTime();
       return aw - bw;
     });
-  }, [tasks, selectedDate, filter, myId, partnerId]);
+  }, [tasks, selectedDate]);
 
   return (
     <Screen scroll>
-      {/* Large "Monday, 5" header */}
       <View style={styles.header}>
         <View>
           <Text variant="largeTitle">{format(selectedDate, 'EEEE, d')}</Text>
@@ -81,7 +57,6 @@ export const TasksScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* Week strip */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -113,52 +88,18 @@ export const TasksScreen: React.FC = () => {
         })}
       </ScrollView>
 
-      {/* Filter row */}
-      <View style={styles.filters}>
-        {([
-          { value: 'all' as const, label: 'Everyone' },
-          { value: 'mine' as const, label: user?.name ?? 'Me' },
-          { value: 'partner' as const, label: partnerName ?? 'Partner' },
-        ]).map((opt) => {
-          const active = opt.value === filter;
-          return (
-            <Pressable
-              key={opt.value}
-              onPress={() => setFilter(opt.value)}
-              style={[styles.filterChip, active && styles.filterChipActive]}
-            >
-              <Text
-                variant="footnote"
-                weight={active ? '600' : '500'}
-                color={active ? colors.textInverse : colors.textSecondary}
-              >
-                {opt.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {/* Task cards */}
       <View style={styles.cardStack}>
         {dayTasks.length === 0 ? (
           <EmptyCard isToday={isToday(selectedDate)} />
         ) : (
-          dayTasks.map((t) => {
-            const resolvedOwner =
-              t.ownerId === 'me' || t.ownerId === 'local-user' ? myId : t.ownerId;
-            const isMine = resolvedOwner === myId;
-            return (
-              <TaskCard
-                key={t.id}
-                task={t}
-                accentColor={t.color ?? colorFor(t.ownerId)}
-                ownerLabel={nameFor(t.ownerId)}
-                onToggle={toggleTask}
-                readOnly={!isMine}
-              />
-            );
-          })
+          dayTasks.map((t) => (
+            <TaskCard
+              key={t.id}
+              task={t}
+              accentColor={t.color}
+              onToggle={toggleTask}
+            />
+          ))
         )}
       </View>
     </Screen>
@@ -171,7 +112,7 @@ const EmptyCard: React.FC<{ isToday: boolean }> = ({ isToday }) => (
       {isToday ? "You're clear today" : 'Nothing scheduled'}
     </Text>
     <Text variant="subhead" style={{ marginTop: 4 }}>
-      Tell the owl what you've got — it'll sort the rest.
+      Tell Ottley what you've got — he'll sort the rest.
     </Text>
   </View>
 );
@@ -208,23 +149,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dayPillActive: {
-    backgroundColor: colors.surfaceInverse,
-    borderColor: colors.surfaceInverse,
-  },
-  filters: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  filterChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  filterChipActive: {
     backgroundColor: colors.surfaceInverse,
     borderColor: colors.surfaceInverse,
   },

@@ -41,7 +41,7 @@ export const DashboardScreen: React.FC = () => {
       // `sendToClaude` action in useAssistantStore will tool-call
       // into suggestionEngine.propose() — never mutate directly.
       appendAssistant(
-        "Got it — I'll add that as a suggestion for you to approve.",
+        "Noted. I'll file that under 'things you'll agree to later' — check the suggestions feed.",
       );
     },
     [appendUser, appendAssistant],

@@ -1,8 +1,7 @@
-export { colors, tagColors, userPalettes } from './colors';
+export { colors, tagColors } from './colors';
 export { spacing, radius } from './spacing';
 export { typography } from './typography';
 export { shadows } from './shadows';
-export { useUserTheme } from './useUserTheme';
 export { lightPalette } from './lightPalette';
 export {
   categoryColors,
@@ -12,12 +11,7 @@ export {
   statusLabel,
 } from './categoryColors';
 
-export type {
-  ColorToken,
-  TagColor,
-  UserPalette,
-  UserPaletteKey,
-} from './colors';
+export type { ColorToken, TagColor } from './colors';
 export type { TypographyToken } from './typography';
 export type { LightPaletteToken } from './lightPalette';
 export type { Category, Status } from './categoryColors';

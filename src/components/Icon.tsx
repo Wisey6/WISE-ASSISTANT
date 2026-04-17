@@ -7,7 +7,6 @@ export type IconName =
   | 'home'
   | 'check'
   | 'calendar'
-  | 'owl'
   | 'mic'
   | 'send'
   | 'plus'
@@ -67,17 +66,6 @@ const renderPath = (name: IconName, color: string, sw: number) => {
         'M4.5 7.5h15v12a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-12ZM4.5 10.5h15M8 4.5v4M16 4.5v4',
         color,
         sw,
-      );
-    case 'owl':
-      // A minimal owl glyph — two round eyes + head outline + tuft.
-      return (
-        <>
-          {stroke('M5 12a7 7 0 0 1 14 0v4a4 4 0 0 1-4 4h-6a4 4 0 0 1-4-4v-4Z', color, sw)}
-          {stroke('M7.5 7 5.5 4.5M16.5 7 18.5 4.5', color, sw)}
-          <Circle cx="9.3" cy="11.5" r="1.6" stroke={color} strokeWidth={sw} />
-          <Circle cx="14.7" cy="11.5" r="1.6" stroke={color} strokeWidth={sw} />
-          {stroke('M11 14.5l1 1 1-1', color, sw)}
-        </>
       );
     case 'mic':
       return stroke(
