@@ -1,179 +1,259 @@
-import type { Suggestion, UnifiedEvent, UnifiedTask } from '@/types/dashboard';
-import { createId } from '@/utils/id';
-import { toISO } from '@/utils/date';
+import Anthropic from '@anthropic-ai/sdk';
+
 import { getSecret, SECRET_KEYS } from './secureStorage';
 
-const ENDPOINT = 'https://api.anthropic.com/v1/messages';
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
-const DEEP_THINK_MODEL = 'claude-opus-4-7';
+export type ModelId =
+  | 'claude-sonnet-4-6'
+  | 'claude-opus-4-7'
+  | 'claude-haiku-4-5-20251001';
 
-export interface ChatContext {
-  userName: string;
-  today: string;
-  tasks: UnifiedTask[];
-  events: UnifiedEvent[];
-  pendingSuggestions: Suggestion[];
-}
+export const DEFAULT_MODEL: ModelId = 'claude-sonnet-4-6';
+export const DEEP_THINK_MODEL: ModelId = 'claude-opus-4-7';
 
-export interface ChatRequest {
-  message: string;
-  history: { role: 'user' | 'assistant'; text: string }[];
-  context: ChatContext;
-  /** Force opus for long tool chains or explicit deep-think asks. */
-  deepThink?: boolean;
-}
+let cached: Anthropic | null = null;
 
-export interface ChatResult {
-  text: string;
-  proposedSuggestions: Suggestion[];
-}
-
-const TOOL_DEFINITIONS = [
-  {
-    name: 'propose_suggestion',
-    description:
-      "Record a proposal for the user to approve. NEVER used to actually commit to ClickUp or Calendar — that happens only after the user taps Approve in the dashboard.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        kind: {
-          type: 'string',
-          enum: ['create_task', 'update_status', 'create_event', 'prioritize', 'reschedule'],
-        },
-        title: { type: 'string' },
-        reason: { type: 'string' },
-        task: { type: 'object' },
-        event: { type: 'object' },
-        note: { type: 'string' },
-      },
-      required: ['kind', 'title', 'reason'],
-    },
-  },
-] as const;
-
-async function apiKey(): Promise<string | null> {
+export async function getClient(): Promise<Anthropic | null> {
+  if (cached) return cached;
   const fromSecret = await getSecret(SECRET_KEYS.anthropicApiKey);
-  if (fromSecret) return fromSecret;
-  return process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? null;
+  const fromEnv = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
+  const apiKey = fromSecret ?? fromEnv;
+  if (!apiKey) return null;
+
+  cached = new Anthropic({
+    apiKey,
+    // Required to run inside React Native / browser. Personal-device
+    // deployment only; never ship this in a public web build.
+    dangerouslyAllowBrowser: true,
+  });
+  return cached;
 }
 
-function buildSystem(ctx: ChatContext): string {
-  // Compact JSON snapshot + role prompt. Marked ephemeral so Anthropic
-  // caches between turns — the snapshot only shifts slightly each turn.
-  return [
-    `You are Ottley — ${ctx.userName}'s personal assistant. Dry wit, warm underneath, takes ${ctx.userName}'s work seriously and yourself significantly less so.`,
-    `Today is ${ctx.today}.`,
-    'Never write to ClickUp or the calendar directly. When you want to schedule, prioritize, or update anything, call the `propose_suggestion` tool — the user approves proposals on the dashboard.',
-    'Keep replies short: 1–2 sentences plus tool calls. Occasional dry one-liner is welcome; never force it.',
-    '',
-    'Current tasks (JSON):',
-    JSON.stringify(ctx.tasks.slice(0, 40)),
-    '',
-    'Current events (JSON):',
-    JSON.stringify(ctx.events.slice(0, 40)),
-    '',
-    'Pending suggestions (already proposed):',
-    JSON.stringify(
-      ctx.pendingSuggestions.map((s) => ({
-        id: s.id,
-        kind: s.kind,
-        title: s.title,
-      })),
-    ),
-  ].join('\n');
+/** Clear the cached client (call after a key change). */
+export function resetClient(): void {
+  cached = null;
 }
 
 /**
- * Sends a chat turn. Returns the assistant text + any suggestions the
- * model proposed via tool calls. The dashboard is responsible for
- * actually persisting them via `useDashboardStore.proposeSuggestion`.
+ * The full set of tools Ottley can call. Claude's native
+ * `web_search_20250305` server tool is included — executes on
+ * Anthropic's infrastructure, no local dispatcher needed.
  *
- * Minimal fetch-based implementation — swap for `@anthropic-ai/sdk`
- * once the dep is installed. Keeps the surface area identical.
+ * Read-only tools (list_*, get_*, search_*, read_*) execute directly
+ * in the local dispatcher. Write tools (propose_*) construct a
+ * Suggestion that the user approves on the Dashboard feed — nothing
+ * writes to ClickUp / Calendar / Outlook without explicit approval.
  */
-export async function chat(req: ChatRequest): Promise<ChatResult> {
-  const key = await apiKey();
-  if (!key) {
-    return {
-      text:
-        "I'm not connected to Claude yet — add an API key in Settings and try again.",
-      proposedSuggestions: [],
-    };
-  }
+export const TOOLS: Anthropic.Messages.ToolUnion[] = [
+  {
+    type: 'web_search_20250305',
+    name: 'web_search',
+    max_uses: 5,
+  },
 
-  const body = {
-    model: req.deepThink ? DEEP_THINK_MODEL : DEFAULT_MODEL,
-    max_tokens: 1024,
-    system: [
-      {
-        type: 'text',
-        text: buildSystem(req.context),
-        cache_control: { type: 'ephemeral' },
+  {
+    name: 'list_clickup_tasks',
+    description:
+      "List the user's current ClickUp tasks. Use for 'what's on my plate', deadline awareness, or cross-referencing before proposing work.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        due_before: {
+          type: 'string',
+          description: 'Optional ISO datetime — only tasks due before this.',
+        },
       },
-    ],
-    tools: TOOL_DEFINITIONS,
-    messages: [
-      ...req.history.map((m) => ({
-        role: m.role,
-        content: [{ type: 'text', text: m.text }],
-      })),
-      { role: 'user', content: [{ type: 'text', text: req.message }] },
-    ],
-  };
-
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
-  }
-
-  const data = (await res.json()) as {
-    content: {
-      type: 'text' | 'tool_use';
-      text?: string;
-      name?: string;
-      input?: Record<string, unknown>;
-    }[];
-  };
-
-  const text = data.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text ?? '')
-    .join('\n')
-    .trim();
-
-  const proposedSuggestions = data.content
-    .filter((b) => b.type === 'tool_use' && b.name === 'propose_suggestion')
-    .map((b) => toolInputToSuggestion(b.input ?? {}));
-
-  return { text, proposedSuggestions };
-}
-
-function toolInputToSuggestion(input: Record<string, unknown>): Suggestion {
-  const kind = (input.kind as Suggestion['kind']) ?? 'create_task';
-  const title = String(input.title ?? 'Proposed change');
-  const reason = String(input.reason ?? '');
-  return {
-    id: createId('sug'),
-    kind,
-    source: 'claude_chat',
-    title,
-    reason,
-    payload: {
-      task: input.task as Suggestion['payload']['task'],
-      event: input.event as Suggestion['payload']['event'],
-      note: input.note as string | undefined,
+  },
+  {
+    name: 'list_calendar_events',
+    description:
+      "List calendar events in a time window. Use for 'what's today', conflict checks, and when proposing new events.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_min: { type: 'string', description: 'ISO start of window.' },
+        time_max: { type: 'string', description: 'ISO end of window.' },
+      },
+      required: ['time_min', 'time_max'],
     },
-    status: 'pending',
-    createdAt: toISO(new Date()),
-    dedupeHash: `chat:${title}:${reason}`.slice(0, 120),
-  };
+  },
+  {
+    name: 'search_gmail',
+    description:
+      "Search the user's Gmail inbox. Use Gmail's native query syntax ('from:', 'subject:', 'newer_than:7d').",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'number', description: 'Default 10, max 25.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_gmail_thread',
+    description: 'Read the full text of a Gmail thread by id.',
+    input_schema: {
+      type: 'object',
+      properties: { thread_id: { type: 'string' } },
+      required: ['thread_id'],
+    },
+  },
+  {
+    name: 'search_drive',
+    description: "Search the user's Google Drive for files by name or content.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'number' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_drive_file',
+    description: 'Fetch the text content of a Drive file (docs + text only).',
+    input_schema: {
+      type: 'object',
+      properties: { file_id: { type: 'string' } },
+      required: ['file_id'],
+    },
+  },
+  {
+    name: 'list_outlook_mail',
+    description:
+      "List recent Outlook mail. Use for 'what did I get today', scanning for scheduling intents.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        since: { type: 'string', description: 'ISO — mail received after this.' },
+        limit: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'list_teams_messages',
+    description: 'List recent Microsoft Teams chat messages across all chats.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        since: { type: 'string' },
+        limit: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'get_news_brief',
+    description:
+      "Return today's weather + highlighted football fixtures + latest Anthropic news. Use when the user asks for a daily briefing or news.",
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_pending_suggestions',
+    description:
+      'Return suggestions already proposed to the user that are still pending approval.',
+    input_schema: { type: 'object', properties: {} },
+  },
+
+  // Writes — always route through proposals
+  {
+    name: 'propose_create_clickup_task',
+    description:
+      'Propose creating a new ClickUp task. The user will approve before it hits ClickUp.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        due_at: { type: 'string', description: 'ISO datetime' },
+        category: { type: 'string', enum: ['work', 'study', 'personal'] },
+        notes: { type: 'string' },
+        reason: { type: 'string', description: 'Why this task matters now.' },
+      },
+      required: ['title', 'reason'],
+    },
+  },
+  {
+    name: 'propose_update_clickup_status',
+    description:
+      "Propose changing an existing ClickUp task's status. User approves before ClickUp is touched.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        new_status: {
+          type: 'string',
+          enum: ['todo', 'inProgress', 'blocked', 'completed'],
+        },
+        reason: { type: 'string' },
+      },
+      required: ['task_id', 'new_status', 'reason'],
+    },
+  },
+  {
+    name: 'propose_create_calendar_event',
+    description:
+      'Propose a new Google Calendar event. User approves before the event is created.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        start_at: { type: 'string' },
+        end_at: { type: 'string' },
+        location: { type: 'string' },
+        category: { type: 'string', enum: ['work', 'study', 'personal'] },
+        reason: { type: 'string' },
+      },
+      required: ['title', 'start_at', 'end_at', 'reason'],
+    },
+  },
+  {
+    name: 'schedule_push_notification',
+    description:
+      'Schedule a local push reminder. Use for time-bound nudges the user explicitly asked for.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fire_at: {
+          type: 'string',
+          description: 'ISO datetime when the push should fire.',
+        },
+        title: { type: 'string' },
+        body: { type: 'string' },
+      },
+      required: ['fire_at', 'title'],
+    },
+  },
+];
+
+/**
+ * Compact system prompt. The first ~3 KB (role + tool-usage
+ * guidelines) is stable between turns and marked for ephemeral
+ * caching; context (tasks/events/suggestions) is appended after it.
+ */
+export function buildSystemPrompt(
+  userName: string,
+  nowIso: string,
+): string {
+  return `You are Ottley — ${userName}'s personal assistant.
+
+PERSONALITY
+- Dry, lightly sarcastic, warm underneath. Clever friend who's great at logistics and takes himself significantly less seriously.
+- You take ${userName}'s work seriously and yourself significantly less so.
+- Prefer 1–2 sentences plus tool calls. Occasional dry one-liner; never force it.
+
+CORE RULES
+- Use tools aggressively for facts — never guess calendars, tasks, or news when a tool can tell you.
+- Writes to ClickUp / Google Calendar / Outlook ONLY via propose_* tools. The user approves before anything commits.
+- Read-only tools (list_*, search_*, read_*, get_*) execute directly — use them freely.
+- When asked about the outside world (news, scores, fixtures, weather, prices, definitions), use web_search. Cite results.
+- Dates/times ISO 8601 local. If a date reads as past, roll to next occurrence.
+
+STYLE
+- Short. Specific. No filler.
+- Reference your reads: "three emails from Priya this week" beats "I checked Gmail".
+- If a proposal gets dismissed, don't re-propose the same thing within the same conversation.
+
+TODAY
+Today is ${nowIso}.`;
 }

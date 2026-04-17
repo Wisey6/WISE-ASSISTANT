@@ -28,7 +28,8 @@ import type {
 } from '@/types';
 import { toISO } from '@/utils/date';
 import { useUserStore } from '@/store/useUserStore';
-import { callClaude, hasApiKey, type ClaudeMessage } from './claude';
+import { getClient } from './anthropic';
+import { runOttleyTurn, type ChatTurn } from './ottleyAgent';
 
 /**
  * -----------------------------------------------------------------------
@@ -88,22 +89,43 @@ export async function handleUserTurn(
   history: AssistantMessage[],
   pending: PendingIntent | null,
 ): Promise<AssistantResponse> {
-  if (hasApiKey()) {
+  const client = await getClient();
+  if (client) {
     try {
-      return await handleTurnWithClaude(input, history);
+      return await handleTurnWithOttley(input, history);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[ai] Gemini call failed, falling back:', msg);
+      console.warn('[ai] Ottley call failed, falling back:', msg);
       const local = await handleTurnLocally(input, pending);
       return {
         ...local,
         reply:
           local.reply ||
-          "My wifi brain is on strike — falling back to the regex one for this one.",
+          "My Claude brain tripped — using the regex one for this turn.",
       };
     }
   }
   return handleTurnLocally(input, pending);
+}
+
+async function handleTurnWithOttley(
+  input: string,
+  history: AssistantMessage[],
+): Promise<AssistantResponse> {
+  const userName = useUserStore.getState().user.name;
+  const turns: ChatTurn[] = history
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .slice(-20)
+    .map((m) => ({ role: m.role, content: m.text }));
+
+  // Ottley routes writes through proposeSuggestion directly into the
+  // dashboard store. This handler just returns the text reply — no
+  // tasks / recurrence bubbled back up to HomeScreen.
+  const result = await runOttleyTurn(userName, turns, input);
+  return {
+    reply: result.text,
+    nextIntent: null,
+  };
 }
 
 /**
@@ -149,106 +171,6 @@ async function handleTurnLocally(
     suggestions: overloaded
       ? ['Move low-priority to next week', 'Leave it', 'Anything else?']
       : ['Add another', 'Set a reminder', 'Thanks'],
-  };
-}
-
-/* -------------------------------------------------------------------------
- * Remote (Claude) turn handler
- *
- * Sends the full conversation to Claude with a system prompt and a
- * small set of tools (create_task, create_recurring_schedule,
- * suggest_replies). Claude does its own conversation + follow-ups,
- * and the tool calls are translated into the same AssistantResponse
- * shape the rest of the app already speaks.
- * -------------------------------------------------------------------------
- */
-
-async function handleTurnWithClaude(
-  input: string,
-  history: AssistantMessage[],
-): Promise<AssistantResponse> {
-  const text = input.trim();
-  if (!text) {
-    return { reply: "Didn't catch that — try again?" };
-  }
-
-  const recent = history.slice(-20);
-  const messages: ClaudeMessage[] = recent
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({ role: m.role, content: m.text }));
-
-  if (
-    messages.length === 0 ||
-    messages[messages.length - 1].role !== 'user' ||
-    messages[messages.length - 1].content !== text
-  ) {
-    messages.push({ role: 'user', content: text });
-  }
-
-  const userName = useUserStore.getState().user.name;
-
-  const result = await callClaude({ messages, userName });
-
-  const tasks: ParsedTaskDraft[] = [];
-  let recurrence: Recurrence | undefined;
-  let suggestions: string[] | undefined;
-
-  for (const call of result.toolCalls) {
-    if (call.name === 'create_task') {
-      const t = call.input as {
-        title?: string;
-        dueAt?: string;
-        startAt?: string;
-        endAt?: string;
-        priority?: Priority;
-        estimatedMinutes?: number;
-        notes?: string;
-      };
-      const rawTitle = (t.title ?? '').trim();
-      if (!rawTitle || /^(new task|untitled|task)$/i.test(rawTitle)) {
-        continue;
-      }
-      tasks.push({
-        title: rawTitle,
-        dueAt: t.dueAt ?? null,
-        startAt: t.startAt ?? null,
-        endAt: t.endAt ?? null,
-        priority: t.priority ?? 'medium',
-        estimatedMinutes: t.estimatedMinutes,
-        notes: t.notes,
-      });
-    } else if (call.name === 'create_recurring_schedule') {
-      const r = call.input as {
-        title?: string;
-        days?: Weekday[];
-        startTime?: string;
-        endTime?: string;
-        weeksAhead?: number;
-      };
-      if (r.days && r.startTime && r.endTime) {
-        recurrence = {
-          days: r.days,
-          startTime: r.startTime,
-          endTime: r.endTime,
-          weeksAhead: r.weeksAhead ?? 4,
-        };
-      }
-    } else if (call.name === 'suggest_replies') {
-      const s = call.input as { suggestions?: string[] };
-      if (Array.isArray(s.suggestions) && s.suggestions.length > 0) {
-        suggestions = s.suggestions.slice(0, 5);
-      }
-    }
-  }
-
-  const createdSomething = tasks.length > 0 || !!recurrence;
-
-  return {
-    reply: result.text || (createdSomething ? 'Done.' : "Hm, say that again?"),
-    tasks: tasks.length > 0 ? tasks : undefined,
-    recurrence,
-    suggestions,
-    nextIntent: null,
   };
 }
 

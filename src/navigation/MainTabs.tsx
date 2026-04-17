@@ -10,7 +10,6 @@ import { colors, radius, shadows, spacing } from '@/theme';
 import { DashboardScreen } from '@/screens/DashboardScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { TasksScreen } from '@/screens/TasksScreen';
-import { CalendarScreen } from '@/screens/CalendarScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 import { Icon, type IconName } from '@/components';
 
@@ -19,59 +18,39 @@ import type { MainTabParamList } from './types';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 /**
- * Minimal bottom nav — a short white pill with a Home icon and a
- * Profile avatar, plus a floating black "+" button to the right. The
- * Tasks and Calendar tabs are reached through the Home chat ("what
- * do I have today?") and the + button, not icons — keeps the bar
- * uncluttered like the reference.
+ * Minimal bottom nav — a short white pill with four icons. No FAB,
+ * no Calendar tab. The Dashboard hosts the calendar widget; Ottley
+ * lives as a floating black FAB on the Dashboard surface.
  */
-export const MainTabs: React.FC = () => {
-  return (
-    <View style={{ flex: 1 }}>
-      <Tab.Navigator
-        tabBar={(props) => <FloatingBar {...props} />}
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <Tab.Screen name="Dashboard" component={DashboardScreen} />
-        <Tab.Screen name="Home" component={HomeScreen} />
-        <Tab.Screen name="Tasks" component={TasksScreen} />
-        <Tab.Screen name="Calendar" component={CalendarScreen} />
-        <Tab.Screen name="Profile" component={ProfileScreen} />
-      </Tab.Navigator>
-    </View>
-  );
-};
-
-/* -------------------------------------------------------------------------
- * Custom tab bar
- * -------------------------------------------------------------------------
- */
+export const MainTabs: React.FC = () => (
+  <View style={{ flex: 1 }}>
+    <Tab.Navigator
+      tabBar={(props) => <FloatingBar {...props} />}
+      screenOptions={{ headerShown: false }}
+    >
+      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Tasks" component={TasksScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  </View>
+);
 
 const BAR_ROUTES: { key: keyof MainTabParamList; icon: IconName }[] = [
   { key: 'Dashboard', icon: 'dashboard' },
   { key: 'Home', icon: 'home' },
+  { key: 'Tasks', icon: 'check' },
   { key: 'Profile', icon: 'person' },
 ];
 
 const FloatingBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
   const insets = useSafeAreaInsets();
   const bottom = Math.max(spacing.md, insets.bottom);
-
   const currentKey = state.routeNames[state.index] as keyof MainTabParamList;
 
   const goTo = (key: keyof MainTabParamList) => {
     navigation.navigate(key as never);
   };
-
-  // Pressing the + button cycles: Home → Tasks → Calendar → Home
-  const cycleKey: keyof MainTabParamList =
-    currentKey === 'Tasks'
-      ? 'Calendar'
-      : currentKey === 'Calendar'
-      ? 'Home'
-      : 'Tasks';
 
   return (
     <View style={[styles.container, { bottom }]} pointerEvents="box-none">
@@ -96,17 +75,6 @@ const FloatingBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
           );
         })}
       </View>
-      <Pressable
-        onPress={() => goTo(cycleKey)}
-        style={styles.fab}
-        hitSlop={10}
-      >
-        <Icon
-          name={cycleKey === 'Calendar' ? 'calendar' : cycleKey === 'Tasks' ? 'check' : 'plus'}
-          size={22}
-          color={colors.textInverse}
-        />
-      </Pressable>
     </View>
   );
 };
@@ -119,7 +87,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
   pill: {
@@ -146,14 +113,5 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.surfaceMuted,
     borderRadius: 22,
-  },
-  fab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.surfaceInverse,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.floating,
   },
 });

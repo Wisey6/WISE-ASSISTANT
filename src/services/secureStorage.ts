@@ -21,11 +21,7 @@ let cached: SecureStoreModule | null | undefined;
 async function loadNative(): Promise<SecureStoreModule | null> {
   if (cached !== undefined) return cached;
   try {
-    // expo-secure-store is an optional dep. The type is missing until
-    // the package is installed into the project — the runtime import
-    // still resolves correctly on native once it is added.
-    // @ts-expect-error — module is optional; resolved at runtime.
-    const mod: SecureStoreModule = await import('expo-secure-store');
+    const mod = (await import('expo-secure-store')) as SecureStoreModule;
     cached = {
       getItemAsync: mod.getItemAsync,
       setItemAsync: mod.setItemAsync,

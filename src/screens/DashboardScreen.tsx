@@ -1,11 +1,10 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { lightPalette, spacing } from '@/theme';
 import {
   CategoryBreakdown,
-  ChatDock,
   GreetingHeader,
   GridCell,
   GridLayout,
@@ -18,7 +17,6 @@ import {
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { useHourlyRefresh } from '@/hooks/useHourlyRefresh';
 import { runHourlyScan } from '@/services/suggestionEngine';
-import { useAssistantStore } from '@/store/useAssistantStore';
 
 /**
  * Dashboard surface. Mobile-first stack; on wide screens (>= 1024px)
@@ -29,23 +27,8 @@ import { useAssistantStore } from '@/store/useAssistantStore';
 export const DashboardScreen: React.FC = () => {
   const bp = useBreakpoint();
   const insets = useSafeAreaInsets();
-  const appendUser = useAssistantStore((s) => s.appendUser);
-  const appendAssistant = useAssistantStore((s) => s.appendAssistant);
 
   useHourlyRefresh(runHourlyScan);
-
-  const handleSubmit = useCallback(
-    (text: string) => {
-      appendUser(text);
-      // Placeholder while the Anthropic wiring lands. The real
-      // `sendToClaude` action in useAssistantStore will tool-call
-      // into suggestionEngine.propose() — never mutate directly.
-      appendAssistant(
-        "Noted. I'll file that under 'things you'll agree to later' — check the suggestions feed.",
-      );
-    },
-    [appendUser, appendAssistant],
-  );
 
   if (bp === 'lg') {
     return (
@@ -78,9 +61,6 @@ export const DashboardScreen: React.FC = () => {
               <GridCell span={12}>
                 <IntegrationsStatus />
               </GridCell>
-              <GridCell span={12}>
-                <ChatDock onSubmit={handleSubmit} />
-              </GridCell>
             </GridLayout>
           </View>
         </ScrollView>
@@ -108,7 +88,6 @@ export const DashboardScreen: React.FC = () => {
           <UpcomingDeadlines />
           <JokeCard />
           <IntegrationsStatus />
-          <ChatDock onSubmit={handleSubmit} compact />
         </View>
       </ScrollView>
     </View>

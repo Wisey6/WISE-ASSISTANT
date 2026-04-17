@@ -1,6 +1,5 @@
 export { CategoryBreakdown } from './CategoryBreakdown';
 export { CategoryPill } from './CategoryPill';
-export { ChatDock } from './ChatDock';
 export { DashboardCard } from './DashboardCard';
 export { GreetingHeader } from './GreetingHeader';
 export { GridCell, GridLayout } from './GridLayout';
