@@ -9,6 +9,7 @@ export type OnboardingStackParamList = {
 };
 
 export type MainTabParamList = {
+  Dashboard: undefined;
   Home: undefined;
   Tasks: undefined;
   Calendar: undefined;

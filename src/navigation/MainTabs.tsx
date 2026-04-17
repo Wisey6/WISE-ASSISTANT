@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 import { colors, radius, shadows, spacing } from '@/theme';
+import { DashboardScreen } from '@/screens/DashboardScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { TasksScreen } from '@/screens/TasksScreen';
 import { CalendarScreen } from '@/screens/CalendarScreen';
@@ -32,6 +33,7 @@ export const MainTabs: React.FC = () => {
           headerShown: false,
         }}
       >
+        <Tab.Screen name="Dashboard" component={DashboardScreen} />
         <Tab.Screen name="Home" component={HomeScreen} />
         <Tab.Screen name="Tasks" component={TasksScreen} />
         <Tab.Screen name="Calendar" component={CalendarScreen} />
@@ -54,6 +56,7 @@ interface BarProps {
 }
 
 const BAR_ROUTES: { key: keyof MainTabParamList; icon: IconName }[] = [
+  { key: 'Dashboard', icon: 'dashboard' },
   { key: 'Home', icon: 'home' },
   { key: 'Profile', icon: 'person' },
 ];

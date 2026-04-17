@@ -16,7 +16,8 @@ export type IconName =
   | 'arrowRight'
   | 'chevronRight'
   | 'close'
-  | 'person';
+  | 'person'
+  | 'dashboard';
 
 interface Props {
   name: IconName;
@@ -112,6 +113,12 @@ const renderPath = (name: IconName, color: string, sw: number) => {
           <Circle cx="12" cy="9" r="4" stroke={color} strokeWidth={sw} />
           {stroke('M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5', color, sw)}
         </>
+      );
+    case 'dashboard':
+      return stroke(
+        'M4 4h7v9H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 15h7v5H4z',
+        color,
+        sw,
       );
   }
 };
