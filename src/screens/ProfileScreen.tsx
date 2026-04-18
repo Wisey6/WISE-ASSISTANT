@@ -3,6 +3,12 @@ import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Icon, Screen, Text } from '@/components';
 import { colors, radius, spacing, typography } from '@/theme';
+import {
+  FAST_MODEL,
+  SMART_MODEL,
+  DEEP_THINK_MODEL,
+  type ModelId,
+} from '@/services/anthropic';
 import { useAssistantStore } from '@/store/useAssistantStore';
 import { useTaskStore } from '@/store/useTaskStore';
 import { useUserStore } from '@/store/useUserStore';
@@ -30,6 +36,8 @@ import type { IntegrationId } from '@/types/integrations';
 export const ProfileScreen: React.FC = () => {
   const user = useUserStore((s) => s.user);
   const setName = useUserStore((s) => s.setName);
+  const modelPreference = useUserStore((s) => s.modelPreference);
+  const setModelPreference = useUserStore((s) => s.setModelPreference);
   const resetAssistant = useAssistantStore((s) => s.reset);
   const tasks = useTaskStore((s) => s.tasks);
   const providers = useIntegrationsStore((s) => s.providers);
@@ -141,6 +149,40 @@ export const ProfileScreen: React.FC = () => {
         variant="caption"
         style={[styles.sectionLabel, { marginTop: spacing.xl }]}
       >
+        OTTLEY'S BRAIN
+      </Text>
+      <View style={styles.card}>
+        <ModelRow
+          label="Haiku"
+          hint="Fastest, cheapest. Default."
+          model={FAST_MODEL}
+          selected={modelPreference}
+          onSelect={setModelPreference}
+          first
+        />
+        <ModelRow
+          label="Sonnet"
+          hint="Sharper reasoning, ~5× cost."
+          model={SMART_MODEL}
+          selected={modelPreference}
+          onSelect={setModelPreference}
+        />
+        <ModelRow
+          label="Opus"
+          hint="Top-tier. Slow, expensive."
+          model={DEEP_THINK_MODEL}
+          selected={modelPreference}
+          onSelect={setModelPreference}
+        />
+      </View>
+      <Text variant="footnote" style={styles.hint}>
+        Swap any time. Change applies to the next thing you ask.
+      </Text>
+
+      <Text
+        variant="caption"
+        style={[styles.sectionLabel, { marginTop: spacing.xl }]}
+      >
         CONNECTIONS
       </Text>
 
@@ -230,6 +272,52 @@ export const ProfileScreen: React.FC = () => {
   );
 };
 
+interface ModelRowProps {
+  label: string;
+  hint: string;
+  model: ModelId;
+  selected: ModelId;
+  onSelect: (m: ModelId) => void;
+  first?: boolean;
+}
+
+const ModelRow: React.FC<ModelRowProps> = ({
+  label,
+  hint,
+  model,
+  selected,
+  onSelect,
+  first,
+}) => {
+  const active = selected === model;
+  return (
+    <Pressable
+      onPress={() => onSelect(model)}
+      style={[
+        styles.connectionRow,
+        !first && styles.connectionRowDivider,
+      ]}
+    >
+      <View style={{ flex: 1 }}>
+        <Text variant="body" weight="500">
+          {label}
+        </Text>
+        <Text variant="footnote" style={{ color: colors.textTertiary }}>
+          {hint}
+        </Text>
+      </View>
+      <View
+        style={[
+          styles.radio,
+          active && styles.radioActive,
+        ]}
+      >
+        {active ? <View style={styles.radioDot} /> : null}
+      </View>
+    </Pressable>
+  );
+};
+
 interface ConnRowProps {
   label: string;
   connected: boolean;
@@ -305,6 +393,24 @@ const styles = StyleSheet.create({
   hint: {
     marginTop: spacing.xs,
     color: colors.textTertiary,
+  },
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioActive: {
+    borderColor: colors.text,
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.text,
   },
   card: {
     backgroundColor: colors.surface,

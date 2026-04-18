@@ -7,8 +7,21 @@ export type ModelId =
   | 'claude-opus-4-7'
   | 'claude-haiku-4-5-20251001';
 
-export const DEFAULT_MODEL: ModelId = 'claude-sonnet-4-6';
+/** Haiku — fast, cheap, good enough for almost all Ottley turns. */
+export const FAST_MODEL: ModelId = 'claude-haiku-4-5-20251001';
+/** Sonnet — balanced default when you want sharper reasoning. */
+export const SMART_MODEL: ModelId = 'claude-sonnet-4-6';
+/** Opus — heavy lift for multi-step agent turns with lots of tool use. */
 export const DEEP_THINK_MODEL: ModelId = 'claude-opus-4-7';
+
+/** Default model for new installs. Haiku so people don't burn credit. */
+export const DEFAULT_MODEL: ModelId = FAST_MODEL;
+
+export const MODEL_LABELS: Record<ModelId, string> = {
+  'claude-haiku-4-5-20251001': 'Haiku — fast & cheap',
+  'claude-sonnet-4-6': 'Sonnet — balanced',
+  'claude-opus-4-7': 'Opus — top-tier reasoning',
+};
 
 let cached: Anthropic | null = null;
 

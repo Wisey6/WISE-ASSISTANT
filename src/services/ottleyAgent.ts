@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 
 import { useDashboardStore } from '@/store/useDashboardStore';
 import { useNewsStore } from '@/store/useNewsStore';
+import { useUserStore } from '@/store/useUserStore';
 import type { Suggestion, UnifiedTask, UnifiedEvent } from '@/types/dashboard';
 import { createId } from '@/utils/id';
 import { toISO } from '@/utils/date';
@@ -9,7 +10,6 @@ import { toISO } from '@/utils/date';
 import {
   buildSystemPrompt,
   DEEP_THINK_MODEL,
-  DEFAULT_MODEL,
   getClient,
   TOOLS,
   type ModelId,
@@ -70,13 +70,14 @@ export async function runOttleyTurn(
   if (!client) {
     return {
       text:
-        "I don't have a Claude API key yet — drop one into Profile → Anthropic API key and we'll pick this back up.",
+        "I don't have a Claude API key yet — drop EXPO_PUBLIC_ANTHROPIC_API_KEY into your .env and restart Metro.",
       toolCalls: [],
-      modelUsed: DEFAULT_MODEL,
+      modelUsed: useUserStore.getState().modelPreference,
     };
   }
 
-  const model: ModelId = opts.deepThink ? DEEP_THINK_MODEL : DEFAULT_MODEL;
+  const preferred = useUserStore.getState().modelPreference;
+  const model: ModelId = opts.deepThink ? DEEP_THINK_MODEL : preferred;
   const system = buildSystemPrompt(userName, new Date().toISOString());
 
   const messages: Anthropic.Messages.MessageParam[] = [
