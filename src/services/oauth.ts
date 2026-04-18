@@ -49,6 +49,12 @@ export async function connectGoogle(): Promise<boolean> {
     scheme: 'wiseassistant',
     path: 'oauth/google',
   });
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[OAuth] Google redirect URI → register this exact string in Google Cloud Console:\n  ${redirectUri}`,
+    );
+  }
 
   const request = new AuthSession.AuthRequest({
     clientId,
@@ -178,6 +184,12 @@ export async function connectMicrosoft(): Promise<boolean> {
     scheme: 'wiseassistant',
     path: 'oauth/microsoft',
   });
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[OAuth] Microsoft redirect URI → register this exact string in entra.microsoft.com:\n  ${redirectUri}`,
+    );
+  }
 
   const discovery = await msDiscovery();
   const request = new AuthSession.AuthRequest({
