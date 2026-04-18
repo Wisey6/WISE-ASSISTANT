@@ -50,8 +50,63 @@ export const ProfileScreen: React.FC = () => {
   const [clickupSet, setClickupSet] = useState(false);
   const [busy, setBusy] = useState<IntegrationId | null>(null);
 
+  const [googleClientIdDraft, setGoogleClientIdDraft] = useState('');
+  const [msClientIdDraft, setMsClientIdDraft] = useState('');
+  const [msTenantDraft, setMsTenantDraft] = useState('');
+  const [openaiDraft, setOpenaiDraft] = useState('');
+  const [googleIdSet, setGoogleIdSet] = useState(false);
+  const [msIdSet, setMsIdSet] = useState(false);
+  const [openaiSet, setOpenaiSet] = useState(false);
+
   useEffect(() => {
     getSecret(SECRET_KEYS.clickupToken).then((v) => setClickupSet(Boolean(v)));
+    getSecret(SECRET_KEYS.googleClientId).then((v) => setGoogleIdSet(Boolean(v)));
+    getSecret(SECRET_KEYS.microsoftClientId).then((v) => setMsIdSet(Boolean(v)));
+    getSecret(SECRET_KEYS.openaiApiKey).then((v) => setOpenaiSet(Boolean(v)));
+  }, []);
+
+  const saveGoogleClientId = useCallback(async () => {
+    const v = googleClientIdDraft.trim();
+    if (!v) return;
+    await setSecret(SECRET_KEYS.googleClientId, v);
+    setGoogleIdSet(true);
+    setGoogleClientIdDraft('');
+  }, [googleClientIdDraft]);
+
+  const clearGoogleClientId = useCallback(async () => {
+    await deleteSecret(SECRET_KEYS.googleClientId);
+    setGoogleIdSet(false);
+  }, []);
+
+  const saveMsCredentials = useCallback(async () => {
+    const cid = msClientIdDraft.trim();
+    const tenant = msTenantDraft.trim();
+    if (!cid) return;
+    await setSecret(SECRET_KEYS.microsoftClientId, cid);
+    if (tenant) await setSecret(SECRET_KEYS.microsoftTenantId, tenant);
+    else await deleteSecret(SECRET_KEYS.microsoftTenantId);
+    setMsIdSet(true);
+    setMsClientIdDraft('');
+    setMsTenantDraft('');
+  }, [msClientIdDraft, msTenantDraft]);
+
+  const clearMsCredentials = useCallback(async () => {
+    await deleteSecret(SECRET_KEYS.microsoftClientId);
+    await deleteSecret(SECRET_KEYS.microsoftTenantId);
+    setMsIdSet(false);
+  }, []);
+
+  const saveOpenai = useCallback(async () => {
+    const v = openaiDraft.trim();
+    if (!v) return;
+    await setSecret(SECRET_KEYS.openaiApiKey, v);
+    setOpenaiSet(true);
+    setOpenaiDraft('');
+  }, [openaiDraft]);
+
+  const clearOpenai = useCallback(async () => {
+    await deleteSecret(SECRET_KEYS.openaiApiKey);
+    setOpenaiSet(false);
   }, []);
 
   const handleSaveName = () => {
@@ -264,6 +319,76 @@ export const ProfileScreen: React.FC = () => {
         provider's settings when you're done.
       </Text>
 
+      <Text
+        variant="caption"
+        style={[styles.sectionLabel, { marginTop: spacing.xl }]}
+      >
+        CREDENTIALS
+      </Text>
+      <Text variant="footnote" style={[styles.hint, { marginTop: 0, marginBottom: spacing.sm }]}>
+        Paste your OAuth Client IDs here instead of editing .env.
+      </Text>
+
+      <View style={styles.card}>
+        <CredentialRow
+          label="Google OAuth Client ID"
+          hint={
+            googleIdSet
+              ? 'Saved — used for Gmail, Calendar, Drive'
+              : 'From console.cloud.google.com → Credentials'
+          }
+          value={googleClientIdDraft}
+          onChangeValue={setGoogleClientIdDraft}
+          isSet={googleIdSet}
+          placeholder="123456-abc.apps.googleusercontent.com"
+          onSave={saveGoogleClientId}
+          onClear={clearGoogleClientId}
+          first
+        />
+        <CredentialRow
+          label="Microsoft Client ID"
+          hint={
+            msIdSet
+              ? 'Saved — used for Outlook, Teams, Calendar'
+              : 'From entra.microsoft.com → App registrations'
+          }
+          value={msClientIdDraft}
+          onChangeValue={setMsClientIdDraft}
+          isSet={msIdSet}
+          placeholder="00000000-0000-0000-0000-000000000000"
+          onSave={saveMsCredentials}
+          onClear={clearMsCredentials}
+          extra={
+            !msIdSet ? (
+              <TextInput
+                value={msTenantDraft}
+                onChangeText={setMsTenantDraft}
+                placeholder="Tenant (common / org ID, optional)"
+                placeholderTextColor={colors.textTertiary}
+                style={[typography.footnote, styles.credentialInputWide]}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            ) : null
+          }
+        />
+        <CredentialRow
+          label="OpenAI API key (voice input)"
+          hint={
+            openaiSet
+              ? 'Saved — used for Whisper transcription'
+              : 'From platform.openai.com/api-keys'
+          }
+          value={openaiDraft}
+          onChangeValue={setOpenaiDraft}
+          isSet={openaiSet}
+          placeholder="sk-…"
+          onSave={saveOpenai}
+          onClear={clearOpenai}
+          secure
+        />
+      </View>
+
       <Pressable
         onPress={handleSendWeekAhead}
         style={[
@@ -330,6 +455,87 @@ const ModelRow: React.FC<ModelRowProps> = ({
     </Pressable>
   );
 };
+
+interface CredRowProps {
+  label: string;
+  hint: string;
+  value: string;
+  onChangeValue: (v: string) => void;
+  isSet: boolean;
+  placeholder: string;
+  onSave: () => void;
+  onClear: () => void;
+  secure?: boolean;
+  first?: boolean;
+  extra?: React.ReactNode;
+}
+
+const CredentialRow: React.FC<CredRowProps> = ({
+  label,
+  hint,
+  value,
+  onChangeValue,
+  isSet,
+  placeholder,
+  onSave,
+  onClear,
+  secure,
+  first,
+  extra,
+}) => (
+  <View
+    style={[
+      styles.credentialRow,
+      !first && styles.connectionRowDivider,
+    ]}
+  >
+    <View style={styles.credentialTopRow}>
+      <View style={{ flex: 1 }}>
+        <Text variant="body" weight="500">{label}</Text>
+        <Text variant="footnote" style={{ color: colors.textTertiary }}>
+          {hint}
+        </Text>
+      </View>
+      {isSet && (
+        <Pressable onPress={onClear} hitSlop={8}>
+          <Text variant="footnote" color={colors.danger} weight="600">
+            Remove
+          </Text>
+        </Pressable>
+      )}
+    </View>
+    {!isSet && (
+      <>
+        <View style={styles.credentialInputRow}>
+          <TextInput
+            value={value}
+            onChangeText={onChangeValue}
+            placeholder={placeholder}
+            placeholderTextColor={colors.textTertiary}
+            style={[typography.footnote, styles.credentialInputWide]}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={secure}
+          />
+          <Pressable
+            onPress={onSave}
+            disabled={!value.trim()}
+            style={[
+              styles.saveBtn,
+              !value.trim() && styles.saveBtnDisabled,
+            ]}
+            hitSlop={6}
+          >
+            <Text variant="caption" color={colors.textInverse} weight="600">
+              SAVE
+            </Text>
+          </Pressable>
+        </View>
+        {extra}
+      </>
+    )}
+  </View>
+);
 
 interface ConnRowProps {
   label: string;
@@ -451,6 +657,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  credentialRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  credentialTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  credentialInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  credentialInputWide: {
+    flex: 1,
+    paddingVertical: 6,
+    color: colors.text,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   connectionRowDivider: {
     borderTopWidth: StyleSheet.hairlineWidth,

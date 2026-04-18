@@ -9,6 +9,7 @@ export { JokeCard } from './JokeCard';
 export { NewsButton } from './NewsButton';
 export { NewsModal } from './NewsModal';
 export { NewsPreview } from './NewsPreview';
+export { OttleyEye } from './OttleyEye';
 export { OttleyFab } from './OttleyFab';
 export { OttleyModal } from './OttleyModal';
 export { StatusDot } from './StatusDot';

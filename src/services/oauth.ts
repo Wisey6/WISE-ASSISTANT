@@ -27,10 +27,9 @@ const GOOGLE_SCOPES = [
   'profile',
 ];
 
-function googleClientId(): string {
-  // expo-auth-session picks the right platform-specific client id via
-  // the Google provider helper on native; for a single-env dev setup
-  // we just use one id. Users can override per-platform via env.
+async function googleClientId(): Promise<string> {
+  const fromSecret = await getSecret(SECRET_KEYS.googleClientId);
+  if (fromSecret) return fromSecret;
   return (
     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB ??
     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ??
@@ -39,10 +38,10 @@ function googleClientId(): string {
 }
 
 export async function connectGoogle(): Promise<boolean> {
-  const clientId = googleClientId();
+  const clientId = await googleClientId();
   if (!clientId) {
     throw new Error(
-      'Missing EXPO_PUBLIC_GOOGLE_CLIENT_ID — add one to .env from console.cloud.google.com.',
+      'No Google Client ID. Paste one in Profile → Credentials (or set EXPO_PUBLIC_GOOGLE_CLIENT_ID).',
     );
   }
 
@@ -115,8 +114,9 @@ export async function ensureFreshGoogleToken(): Promise<string | null> {
     expiresAt &&
     Date.now() + safeWindow >= Number(expiresAt)
   ) {
+    const clientId = await googleClientId();
     const tokens = await AuthSession.refreshAsync(
-      { clientId: googleClientId(), refreshToken: refresh },
+      { clientId, refreshToken: refresh },
       GOOGLE_DISCOVERY,
     ).catch(() => null);
     if (tokens?.accessToken) {
@@ -135,24 +135,42 @@ export async function ensureFreshGoogleToken(): Promise<string | null> {
 
 /** -------------------------- Microsoft OAuth -------------------------- */
 
-const MS_TENANT = process.env.EXPO_PUBLIC_MS_TENANT_ID ?? 'common';
+const MS_SCOPES = [
+  'Mail.Read',
+  'Calendars.ReadWrite',
+  'Chat.Read',
+  'offline_access',
+  'openid',
+  'profile',
+];
 
-const MS_DISCOVERY = {
-  authorizationEndpoint: `https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/authorize`,
-  tokenEndpoint: `https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/token`,
-};
+async function msTenant(): Promise<string> {
+  const fromSecret = await getSecret(SECRET_KEYS.microsoftTenantId);
+  return fromSecret ?? process.env.EXPO_PUBLIC_MS_TENANT_ID ?? 'common';
+}
 
-const MS_SCOPES = ['Mail.Read', 'Chat.Read', 'offline_access', 'openid', 'profile'];
+async function msDiscovery(): Promise<{
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+}> {
+  const tenant = await msTenant();
+  return {
+    authorizationEndpoint: `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`,
+    tokenEndpoint: `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`,
+  };
+}
 
-function msClientId(): string {
+async function msClientId(): Promise<string> {
+  const fromSecret = await getSecret(SECRET_KEYS.microsoftClientId);
+  if (fromSecret) return fromSecret;
   return process.env.EXPO_PUBLIC_MS_CLIENT_ID ?? '';
 }
 
 export async function connectMicrosoft(): Promise<boolean> {
-  const clientId = msClientId();
+  const clientId = await msClientId();
   if (!clientId) {
     throw new Error(
-      'Missing EXPO_PUBLIC_MS_CLIENT_ID — register an app at entra.microsoft.com.',
+      'No Microsoft Client ID. Paste one in Profile → Credentials (or set EXPO_PUBLIC_MS_CLIENT_ID).',
     );
   }
 
@@ -161,6 +179,7 @@ export async function connectMicrosoft(): Promise<boolean> {
     path: 'oauth/microsoft',
   });
 
+  const discovery = await msDiscovery();
   const request = new AuthSession.AuthRequest({
     clientId,
     redirectUri,
@@ -169,8 +188,8 @@ export async function connectMicrosoft(): Promise<boolean> {
     usePKCE: true,
   });
 
-  await request.makeAuthUrlAsync(MS_DISCOVERY);
-  const result = await request.promptAsync(MS_DISCOVERY);
+  await request.makeAuthUrlAsync(discovery);
+  const result = await request.promptAsync(discovery);
 
   if (result.type !== 'success' || !result.params.code) return false;
 
@@ -183,7 +202,7 @@ export async function connectMicrosoft(): Promise<boolean> {
         ? { code_verifier: request.codeVerifier }
         : undefined,
     },
-    MS_DISCOVERY,
+    discovery,
   );
 
   await setSecret(SECRET_KEYS.microsoftAccessToken, tokens.accessToken);
@@ -217,9 +236,11 @@ export async function ensureFreshMicrosoftToken(): Promise<string | null> {
     expiresAt &&
     Date.now() + safeWindow >= Number(expiresAt)
   ) {
+    const clientId = await msClientId();
+    const discovery = await msDiscovery();
     const tokens = await AuthSession.refreshAsync(
-      { clientId: msClientId(), refreshToken: refresh, scopes: MS_SCOPES },
-      MS_DISCOVERY,
+      { clientId, refreshToken: refresh, scopes: MS_SCOPES },
+      discovery,
     ).catch(() => null);
     if (tokens?.accessToken) {
       await setSecret(SECRET_KEYS.microsoftAccessToken, tokens.accessToken);

@@ -71,7 +71,11 @@ export const SECRET_KEYS = {
   googleAccessToken: 'google.accessToken',
   googleRefreshToken: 'google.refreshToken',
   googleExpiresAt: 'google.expiresAt',
+  googleClientId: 'google.clientId',
   microsoftAccessToken: 'microsoft.accessToken',
   microsoftRefreshToken: 'microsoft.refreshToken',
   microsoftExpiresAt: 'microsoft.expiresAt',
+  microsoftClientId: 'microsoft.clientId',
+  microsoftTenantId: 'microsoft.tenantId',
+  openaiApiKey: 'openai.apiKey',
 } as const;

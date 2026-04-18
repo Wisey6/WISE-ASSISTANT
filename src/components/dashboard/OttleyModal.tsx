@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -9,13 +10,15 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Speech from 'expo-speech';
 
 import { ChatComposer, Icon, Text } from '@/components';
 import { colors, radius, spacing, typography } from '@/theme';
 import { useAssistantStore } from '@/store/useAssistantStore';
 import { useUserStore } from '@/store/useUserStore';
 import { runOttleyTurn } from '@/services/ottleyAgent';
+import { speakBritish, stopBritish } from '@/services/tts';
+import { transcribeRecording } from '@/services/transcribe';
+import { useVoiceInput } from '@/services/voice';
 import type { AssistantMessage } from '@/types';
 
 interface Props {
@@ -59,24 +62,13 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
   const [voiceOn, setVoiceOn] = useState(false);
   const listRef = useRef<FlatList<AssistantMessage>>(null);
 
-  const speak = useCallback((text: string) => {
-    if (!text.trim()) return;
-    Speech.stop();
-    Speech.speak(text, {
-      language: 'en-GB',
-      // iOS "Daniel" is the posh BBC voice; Android falls back to default en-GB.
-      voice: Platform.OS === 'ios' ? 'com.apple.voice.compact.en-GB.Daniel' : undefined,
-      pitch: 1.0,
-      rate: 0.98,
-    });
-  }, []);
+  const voice = useVoiceInput();
+  const [transcribing, setTranscribing] = useState(false);
 
   useEffect(() => {
-    if (!visible) {
-      Speech.stop().catch(() => undefined);
-    }
+    if (!visible) stopBritish();
     return () => {
-      Speech.stop().catch(() => undefined);
+      stopBritish();
     };
   }, [visible]);
 
@@ -104,7 +96,7 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
           },
         });
         appendAssistant(result.text);
-        if (voiceOn) speak(result.text);
+        if (voiceOn) speakBritish(result.text);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         appendAssistant(`Well, that broke: ${msg}`);
@@ -113,8 +105,31 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
         setTools([]);
       }
     },
-    [appendUser, appendAssistant, setThinking, userName, voiceOn, speak],
+    [appendUser, appendAssistant, setThinking, userName, voiceOn],
   );
+
+  // Voice input: hold-to-talk; on release, transcribe via Whisper and
+  // pipe the transcript straight into the normal submit path. Any
+  // configuration/Whisper error surfaces as an Alert — we don't want
+  // to burn the user's assistant turn on a silent failure.
+  const handleVoicePress = useCallback(async () => {
+    if (voice.isRecording) {
+      const rec = await voice.stop();
+      if (!rec?.uri) return;
+      setTranscribing(true);
+      try {
+        const text = await transcribeRecording(rec.uri);
+        if (text) handleSubmit(text);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        Alert.alert('Transcription failed', msg);
+      } finally {
+        setTranscribing(false);
+      }
+    } else {
+      await voice.toggle();
+    }
+  }, [voice, handleSubmit]);
 
   useEffect(() => {
     if (visible) {
@@ -134,7 +149,7 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
           </View>
           <Pressable
             onPress={() => {
-              if (voiceOn) Speech.stop();
+              if (voiceOn) stopBritish();
               setVoiceOn((v) => !v);
             }}
             hitSlop={10}
@@ -194,7 +209,15 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
           >
             <ChatComposer
               onSubmit={handleSubmit}
-              placeholder="Ask Ottley anything…"
+              onVoicePress={handleVoicePress}
+              isRecording={voice.isRecording}
+              placeholder={
+                transcribing
+                  ? 'Transcribing…'
+                  : voice.isRecording
+                    ? 'Listening — tap mic to stop'
+                    : 'Ask Ottley anything…'
+              }
             />
           </View>
         </KeyboardAvoidingView>

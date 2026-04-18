@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { colors, lightPalette, radius, spacing } from '@/theme';
+import { colors, lightPalette, spacing } from '@/theme';
 import { Icon } from '@/components';
 import {
   CalendarWidget,
@@ -17,8 +17,6 @@ import {
   NewsButton,
   NewsModal,
   NewsPreview,
-  OttleyFab,
-  OttleyModal,
   SuggestionsFeed,
 } from '@/components/dashboard';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
@@ -39,7 +37,6 @@ export const DashboardScreen: React.FC = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  const [ottleyOpen, setOttleyOpen] = useState(false);
   const [newsOpen, setNewsOpen] = useState(false);
 
   useHourlyRefresh(async () => {
@@ -47,7 +44,6 @@ export const DashboardScreen: React.FC = () => {
     refreshNews();
   });
 
-  const fabBottom = insets.bottom + 88;
   const openProfile = () => navigation.navigate('Profile');
 
   const topRow = (
@@ -96,9 +92,6 @@ export const DashboardScreen: React.FC = () => {
             </GridLayout>
           </View>
         </ScrollView>
-
-        <OttleyFab onPress={() => setOttleyOpen(true)} bottomInset={fabBottom} />
-        <OttleyModal visible={ottleyOpen} onClose={() => setOttleyOpen(false)} />
         <NewsModal visible={newsOpen} onClose={() => setNewsOpen(false)} />
       </View>
     );
@@ -126,9 +119,6 @@ export const DashboardScreen: React.FC = () => {
           <IntegrationsStatus />
         </View>
       </ScrollView>
-
-      <OttleyFab onPress={() => setOttleyOpen(true)} bottomInset={fabBottom} />
-      <OttleyModal visible={ottleyOpen} onClose={() => setOttleyOpen(false)} />
       <NewsModal visible={newsOpen} onClose={() => setNewsOpen(false)} />
     </View>
   );
