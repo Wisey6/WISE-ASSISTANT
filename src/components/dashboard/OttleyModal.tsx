@@ -142,14 +142,14 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
           >
             <Text
               variant="caption"
-              color={voiceOn ? colors.textInverse : colors.text}
+              color={voiceOn ? '#111111' : '#FFFFFF'}
               weight="600"
             >
               {voiceOn ? 'VOICE · ON' : 'VOICE'}
             </Text>
           </Pressable>
           <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
-            <Icon name="close" size={22} color={colors.text} />
+            <Icon name="close" size={22} color="#FFFFFF" />
           </Pressable>
         </View>
 
@@ -210,7 +210,7 @@ const Bubble: React.FC<{ message: AssistantMessage }> = ({ message }) => {
       <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
         <Text
           variant="callout"
-          color={mine ? colors.textInverse : colors.text}
+          color={mine ? '#FFFFFF' : '#111111'}
         >
           {message.text}
         </Text>
@@ -219,10 +219,12 @@ const Bubble: React.FC<{ message: AssistantMessage }> = ({ message }) => {
   );
 };
 
+const USER_BUBBLE_BLUE = '#2F7BFF';
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
@@ -231,29 +233,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   voiceBtn: {
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   voiceBtnOn: {
-    backgroundColor: colors.surfaceInverse,
+    backgroundColor: '#FFFFFF',
   },
   eyebrow: {
-    color: colors.textTertiary,
+    color: 'rgba(255,255,255,0.55)',
     letterSpacing: 1.2,
   },
   title: {
-    color: colors.text,
+    color: '#FFFFFF',
   },
   closeBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -272,14 +274,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
   },
   bubbleMine: {
-    backgroundColor: colors.surfaceInverse,
+    backgroundColor: USER_BUBBLE_BLUE,
     borderBottomRightRadius: 6,
   },
   bubbleTheirs: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     borderBottomLeftRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   },
   toolsRow: {
     flexDirection: 'row',
@@ -292,27 +292,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   },
   toolDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.accent,
+    backgroundColor: USER_BUBBLE_BLUE,
   },
   toolText: {
-    color: colors.textSecondary,
+    color: 'rgba(255,255,255,0.75)',
   },
   composerWrap: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    backgroundColor: colors.background,
+    backgroundColor: '#000000',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
 });

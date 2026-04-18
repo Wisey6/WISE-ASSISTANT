@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { lightPalette, spacing } from '@/theme';
+import { colors, lightPalette, radius, spacing } from '@/theme';
+import { Icon } from '@/components';
 import {
   CalendarWidget,
   CategoryBreakdown,
@@ -22,6 +25,7 @@ import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { useHourlyRefresh } from '@/hooks/useHourlyRefresh';
 import { runHourlyScan } from '@/services/suggestionEngine';
 import { useNewsStore } from '@/store/useNewsStore';
+import type { RootStackParamList } from '@/navigation/types';
 
 /**
  * Dashboard. Mobile-first stack; desktop uses a 12-col grid. Writes
@@ -32,6 +36,8 @@ export const DashboardScreen: React.FC = () => {
   const bp = useBreakpoint();
   const insets = useSafeAreaInsets();
   const refreshNews = useNewsStore((s) => s.refresh);
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const [ottleyOpen, setOttleyOpen] = useState(false);
   const [newsOpen, setNewsOpen] = useState(false);
@@ -41,7 +47,20 @@ export const DashboardScreen: React.FC = () => {
     refreshNews();
   });
 
-  const fabBottom = insets.bottom + 100;
+  const fabBottom = insets.bottom + 88;
+  const openProfile = () => navigation.navigate('Profile');
+
+  const topRow = (
+    <View style={styles.topRow}>
+      <View style={{ flex: 1 }}>
+        <GreetingHeader />
+      </View>
+      <NewsButton onPress={() => setNewsOpen(true)} />
+      <Pressable onPress={openProfile} hitSlop={8} style={styles.profileBtn}>
+        <Icon name="person" size={18} color={colors.text} />
+      </Pressable>
+    </View>
+  );
 
   if (bp === 'lg') {
     return (
@@ -54,12 +73,7 @@ export const DashboardScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.desktopInner}>
-            <View style={styles.topRow}>
-              <View style={{ flex: 1 }}>
-                <GreetingHeader />
-              </View>
-              <NewsButton onPress={() => setNewsOpen(true)} />
-            </View>
+            {topRow}
             <GridLayout>
               <GridCell span={8}>
                 <CalendarWidget />
@@ -102,17 +116,12 @@ export const DashboardScreen: React.FC = () => {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.topRow}>
-          <View style={{ flex: 1 }}>
-            <GreetingHeader />
-          </View>
-          <NewsButton onPress={() => setNewsOpen(true)} />
-        </View>
+        {topRow}
         <View style={styles.stack}>
           <CalendarWidget />
           <SuggestionsFeed />
           <CategoryBreakdown />
-          <NewsPreview />
+          <NewsPreview onPress={() => setNewsOpen(true)} />
           <JokeCard />
           <IntegrationsStatus />
         </View>
@@ -146,8 +155,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.sm,
     marginBottom: spacing.md,
+  },
+  profileBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   stack: {
     gap: spacing.md,

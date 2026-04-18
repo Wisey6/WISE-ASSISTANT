@@ -8,9 +8,7 @@ import {
 
 import { colors, radius, shadows, spacing } from '@/theme';
 import { DashboardScreen } from '@/screens/DashboardScreen';
-import { HomeScreen } from '@/screens/HomeScreen';
 import { TasksScreen } from '@/screens/TasksScreen';
-import { ProfileScreen } from '@/screens/ProfileScreen';
 import { Icon, type IconName } from '@/components';
 
 import type { MainTabParamList } from './types';
@@ -18,9 +16,9 @@ import type { MainTabParamList } from './types';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 /**
- * Minimal bottom nav — a short white pill with four icons. No FAB,
- * no Calendar tab. The Dashboard hosts the calendar widget; Ottley
- * lives as a floating black FAB on the Dashboard surface.
+ * Minimal bottom nav — Dashboard + Tasks. Profile lives as a
+ * top-right icon on the Dashboard header; Ottley lives as a
+ * small centered pulsing FAB over the Dashboard.
  */
 export const MainTabs: React.FC = () => (
   <View style={{ flex: 1 }}>
@@ -29,18 +27,14 @@ export const MainTabs: React.FC = () => (
       screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
-      <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Tasks" component={TasksScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   </View>
 );
 
 const BAR_ROUTES: { key: keyof MainTabParamList; icon: IconName }[] = [
   { key: 'Dashboard', icon: 'dashboard' },
-  { key: 'Home', icon: 'home' },
   { key: 'Tasks', icon: 'check' },
-  { key: 'Profile', icon: 'person' },
 ];
 
 const FloatingBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {

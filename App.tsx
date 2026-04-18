@@ -8,6 +8,7 @@ import {
   requestNotificationPermission,
   scheduleWeeklyBriefing,
 } from '@/services/notifications';
+import { reconcileIntegrations } from '@/services/bootstrapIntegrations';
 import { useTaskStore } from '@/store/useTaskStore';
 import { useUserStore } from '@/store/useUserStore';
 
@@ -15,6 +16,8 @@ import { useUserStore } from '@/store/useUserStore';
  * On boot we wire up:
  *   1. Notification permission (first launch only).
  *   2. Weekly Monday 7 AM briefing with the user's upcoming tasks.
+ *   3. Reconcile integration connection state with stored tokens —
+ *      seeds ClickUp from .env on first run.
  */
 function useBootstrap() {
   const userName = useUserStore((s) => s.user.name);
@@ -23,6 +26,9 @@ function useBootstrap() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      await reconcileIntegrations().catch(() => undefined);
+      if (cancelled) return;
+
       await requestNotificationPermission().catch(() => false);
       if (cancelled) return;
 

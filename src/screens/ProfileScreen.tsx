@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 import { Icon, Screen, Text } from '@/components';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -121,12 +122,24 @@ export const ProfileScreen: React.FC = () => {
     });
   };
 
+  const navigation = useNavigation();
+
   return (
     <Screen scroll>
-      <Text variant="largeTitle">Profile</Text>
-      <Text variant="subhead" style={{ marginBottom: spacing.xl }}>
-        Small knobs. Nothing fussy.
-      </Text>
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text variant="largeTitle">Profile</Text>
+          <Text variant="subhead">Small knobs. Nothing fussy.</Text>
+        </View>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+          style={styles.closeBtn}
+        >
+          <Icon name="close" size={20} color={colors.text} />
+        </Pressable>
+      </View>
+      <View style={{ height: spacing.xl }} />
 
       <Text variant="caption" style={styles.sectionLabel}>YOUR NAME</Text>
       <View style={styles.field}>
@@ -376,6 +389,20 @@ function errMsg(err: unknown): string {
 }
 
 const styles = StyleSheet.create({
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sectionLabel: {
     marginBottom: spacing.sm,
   },
