@@ -8,6 +8,7 @@ import * as graph from './microsoftGraph';
 import * as google from './googleCalendar';
 import * as clickup from './clickup';
 import * as jokes from './jokes';
+import * as notifSvc from './notifications';
 
 const USE_MOCKS = process.env.EXPO_PUBLIC_USE_MOCKS !== '0';
 
@@ -15,9 +16,17 @@ const USE_MOCKS = process.env.EXPO_PUBLIC_USE_MOCKS !== '0';
  * Enqueue a suggestion if a prior one with the same dedupeHash isn't
  * already present. This is the ONLY path new suggestions enter the
  * store from — chat tool calls and mail/Teams scans both funnel here.
+ * Fires a push notification for background-scan suggestions.
  */
 export function propose(s: Suggestion): void {
+  const before = useDashboardStore.getState().suggestions.length;
   useDashboardStore.getState().proposeSuggestion(s);
+  const after = useDashboardStore.getState().suggestions.length;
+  if (after > before) {
+    notifSvc
+      .notifySuggestionArrived({ source: s.source, title: s.title })
+      .catch(() => undefined);
+  }
 }
 
 /**

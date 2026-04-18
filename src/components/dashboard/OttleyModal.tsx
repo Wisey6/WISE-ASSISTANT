@@ -1,0 +1,269 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ChatComposer, Icon, Text } from '@/components';
+import { colors, radius, spacing, typography } from '@/theme';
+import { useAssistantStore } from '@/store/useAssistantStore';
+import { useUserStore } from '@/store/useUserStore';
+import { runOttleyTurn, type ToolCallRecord } from '@/services/ottleyAgent';
+import type { AssistantMessage } from '@/types';
+
+interface Props {
+  visible: boolean;
+  onClose: () => void;
+}
+
+interface InlineTool {
+  id: string;
+  name: string;
+  label: string;
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  web_search: 'Searching the web',
+  list_clickup_tasks: 'Checking ClickUp',
+  list_calendar_events: 'Checking calendar',
+  search_gmail: 'Searching Gmail',
+  read_gmail_thread: 'Reading Gmail thread',
+  search_drive: 'Searching Drive',
+  read_drive_file: 'Reading Drive file',
+  list_outlook_mail: 'Checking Outlook',
+  list_teams_messages: 'Checking Teams',
+  get_news_brief: 'Pulling news brief',
+  get_pending_suggestions: 'Reviewing pending suggestions',
+  propose_create_clickup_task: 'Proposing task',
+  propose_update_clickup_status: 'Proposing status change',
+  propose_create_calendar_event: 'Proposing event',
+  schedule_push_notification: 'Scheduling reminder',
+};
+
+export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
+  const insets = useSafeAreaInsets();
+  const messages = useAssistantStore((s) => s.messages);
+  const appendUser = useAssistantStore((s) => s.appendUser);
+  const appendAssistant = useAssistantStore((s) => s.appendAssistant);
+  const setThinking = useAssistantStore((s) => s.setThinking);
+  const isThinking = useAssistantStore((s) => s.isThinking);
+  const userName = useUserStore((s) => s.user.name);
+  const [tools, setTools] = useState<InlineTool[]>([]);
+  const listRef = useRef<FlatList<AssistantMessage>>(null);
+
+  const handleSubmit = useCallback(
+    async (text: string) => {
+      appendUser(text);
+      setThinking(true);
+      setTools([]);
+      const history = useAssistantStore
+        .getState()
+        .messages.slice(-20)
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => ({ role: m.role, content: m.text }));
+      try {
+        const result = await runOttleyTurn(userName, history, text, {
+          onToolStart: (name) => {
+            setTools((prev) => [
+              ...prev,
+              {
+                id: `${name}-${Date.now()}-${Math.random()}`,
+                name,
+                label: TOOL_LABELS[name] ?? name.replace(/_/g, ' '),
+              },
+            ]);
+          },
+        });
+        appendAssistant(result.text);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        appendAssistant(`Well, that broke: ${msg}`);
+      } finally {
+        setThinking(false);
+        setTools([]);
+      }
+    },
+    [appendUser, appendAssistant, setThinking, userName],
+  );
+
+  useEffect(() => {
+    if (visible) {
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+    }
+  }, [visible, messages.length]);
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <View>
+            <Text style={[typography.caption, styles.eyebrow]}>OTTLEY</Text>
+            <Text style={[typography.title3, styles.title]}>
+              Hey {userName}.
+            </Text>
+          </View>
+          <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+            <Icon name="close" size={22} color={colors.text} />
+          </Pressable>
+        </View>
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={0}
+        >
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(m) => m.id}
+            renderItem={({ item }) => <Bubble message={item} />}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+
+          {(isThinking || tools.length > 0) && (
+            <View style={styles.toolsRow}>
+              {tools.length === 0 ? (
+                <Text style={[typography.caption, styles.toolText]}>
+                  Thinking…
+                </Text>
+              ) : (
+                tools.map((t) => (
+                  <View key={t.id} style={styles.toolChip}>
+                    <View style={styles.toolDot} />
+                    <Text style={[typography.caption, styles.toolText]}>
+                      {t.label}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          <View
+            style={[
+              styles.composerWrap,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <ChatComposer
+              onSubmit={handleSubmit}
+              placeholder="Ask Ottley anything…"
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
+};
+
+const Bubble: React.FC<{ message: AssistantMessage }> = ({ message }) => {
+  const mine = message.role === 'user';
+  return (
+    <View style={[styles.msgRow, mine ? styles.msgMine : styles.msgTheirs]}>
+      <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+        <Text
+          variant="callout"
+          color={mine ? colors.textInverse : colors.text}
+        >
+          {message.text}
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  eyebrow: {
+    color: colors.textTertiary,
+    letterSpacing: 1.2,
+  },
+  title: {
+    color: colors.text,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listContent: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flexGrow: 1,
+  },
+  msgRow: { marginVertical: spacing.xs },
+  msgMine: { alignItems: 'flex-end' },
+  msgTheirs: { alignItems: 'flex-start' },
+  bubble: {
+    maxWidth: '86%',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.xl,
+  },
+  bubbleMine: {
+    backgroundColor: colors.surfaceInverse,
+    borderBottomRightRadius: 6,
+  },
+  bubbleTheirs: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  toolsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  toolChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  toolDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.accent,
+  },
+  toolText: {
+    color: colors.textSecondary,
+  },
+  composerWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+});

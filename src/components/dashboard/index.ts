@@ -1,3 +1,4 @@
+export { CalendarWidget } from './CalendarWidget';
 export { CategoryBreakdown } from './CategoryBreakdown';
 export { CategoryPill } from './CategoryPill';
 export { DashboardCard } from './DashboardCard';
@@ -5,6 +6,11 @@ export { GreetingHeader } from './GreetingHeader';
 export { GridCell, GridLayout } from './GridLayout';
 export { IntegrationsStatus } from './IntegrationsStatus';
 export { JokeCard } from './JokeCard';
+export { NewsButton } from './NewsButton';
+export { NewsModal } from './NewsModal';
+export { NewsPreview } from './NewsPreview';
+export { OttleyFab } from './OttleyFab';
+export { OttleyModal } from './OttleyModal';
 export { StatusDot } from './StatusDot';
 export { SuggestionCard } from './SuggestionCard';
 export { SuggestionsFeed } from './SuggestionsFeed';

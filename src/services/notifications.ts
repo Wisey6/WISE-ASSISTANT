@@ -204,3 +204,30 @@ export async function notifyTaskCompleted(args: {
     trigger: null,
   });
 }
+
+const SOURCE_LABELS: Record<string, string> = {
+  outlook_scan: 'from Outlook',
+  teams_scan: 'from Teams',
+  deadline_scan: 'from deadline watch',
+  claude_chat: 'from Ottley',
+};
+
+/**
+ * Fire a push when a new background-scan suggestion arrives. Chat-
+ * initiated proposals are skipped — they already show up live while
+ * the user is looking at the Ottley modal.
+ */
+export async function notifySuggestionArrived(args: {
+  source: string;
+  title: string;
+}): Promise<void> {
+  if (args.source === 'claude_chat') return;
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `Ottley — new suggestion ${SOURCE_LABELS[args.source] ?? ''}`.trim(),
+      body: args.title,
+      sound: false,
+    },
+    trigger: null,
+  }).catch(() => undefined);
+}

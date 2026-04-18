@@ -1,34 +1,47 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { lightPalette, spacing } from '@/theme';
 import {
+  CalendarWidget,
   CategoryBreakdown,
   GreetingHeader,
   GridCell,
   GridLayout,
   IntegrationsStatus,
   JokeCard,
+  NewsButton,
+  NewsModal,
+  NewsPreview,
+  OttleyFab,
+  OttleyModal,
   SuggestionsFeed,
-  TodayAgenda,
-  UpcomingDeadlines,
 } from '@/components/dashboard';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { useHourlyRefresh } from '@/hooks/useHourlyRefresh';
 import { runHourlyScan } from '@/services/suggestionEngine';
+import { useNewsStore } from '@/store/useNewsStore';
 
 /**
- * Dashboard surface. Mobile-first stack; on wide screens (>= 1024px)
- * the same widgets flow into a 12-col grid. Writes to external
- * systems only happen when the user approves a suggestion — nothing
- * here side-effects ClickUp / Calendar on its own.
+ * Dashboard. Mobile-first stack; desktop uses a 12-col grid. Writes
+ * to external systems happen only through SuggestionCard approvals —
+ * the Ottley modal tool calls pipe through the same propose path.
  */
 export const DashboardScreen: React.FC = () => {
   const bp = useBreakpoint();
   const insets = useSafeAreaInsets();
+  const refreshNews = useNewsStore((s) => s.refresh);
 
-  useHourlyRefresh(runHourlyScan);
+  const [ottleyOpen, setOttleyOpen] = useState(false);
+  const [newsOpen, setNewsOpen] = useState(false);
+
+  useHourlyRefresh(async () => {
+    await runHourlyScan();
+    refreshNews();
+  });
+
+  const fabBottom = insets.bottom + 100;
 
   if (bp === 'lg') {
     return (
@@ -36,15 +49,20 @@ export const DashboardScreen: React.FC = () => {
         <ScrollView
           contentContainerStyle={[
             styles.desktopScroll,
-            { paddingBottom: insets.bottom + 140 },
+            { paddingBottom: insets.bottom + 160 },
           ]}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.desktopInner}>
-            <GreetingHeader />
+            <View style={styles.topRow}>
+              <View style={{ flex: 1 }}>
+                <GreetingHeader />
+              </View>
+              <NewsButton onPress={() => setNewsOpen(true)} />
+            </View>
             <GridLayout>
               <GridCell span={8}>
-                <TodayAgenda />
+                <CalendarWidget />
               </GridCell>
               <GridCell span={4}>
                 <SuggestionsFeed />
@@ -53,7 +71,7 @@ export const DashboardScreen: React.FC = () => {
                 <CategoryBreakdown />
               </GridCell>
               <GridCell span={4}>
-                <UpcomingDeadlines />
+                <NewsPreview />
               </GridCell>
               <GridCell span={4}>
                 <JokeCard />
@@ -64,6 +82,10 @@ export const DashboardScreen: React.FC = () => {
             </GridLayout>
           </View>
         </ScrollView>
+
+        <OttleyFab onPress={() => setOttleyOpen(true)} bottomInset={fabBottom} />
+        <OttleyModal visible={ottleyOpen} onClose={() => setOttleyOpen(false)} />
+        <NewsModal visible={newsOpen} onClose={() => setNewsOpen(false)} />
       </View>
     );
   }
@@ -75,21 +97,30 @@ export const DashboardScreen: React.FC = () => {
           styles.mobileScroll,
           {
             paddingTop: insets.top + spacing.md,
-            paddingBottom: insets.bottom + 140,
+            paddingBottom: insets.bottom + 160,
           },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <GreetingHeader />
+        <View style={styles.topRow}>
+          <View style={{ flex: 1 }}>
+            <GreetingHeader />
+          </View>
+          <NewsButton onPress={() => setNewsOpen(true)} />
+        </View>
         <View style={styles.stack}>
-          <TodayAgenda />
+          <CalendarWidget />
           <SuggestionsFeed />
           <CategoryBreakdown />
-          <UpcomingDeadlines />
+          <NewsPreview />
           <JokeCard />
           <IntegrationsStatus />
         </View>
       </ScrollView>
+
+      <OttleyFab onPress={() => setOttleyOpen(true)} bottomInset={fabBottom} />
+      <OttleyModal visible={ottleyOpen} onClose={() => setOttleyOpen(false)} />
+      <NewsModal visible={newsOpen} onClose={() => setNewsOpen(false)} />
     </View>
   );
 };
@@ -110,6 +141,13 @@ const styles = StyleSheet.create({
   desktopInner: {
     width: '100%',
     maxWidth: 1280,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
   stack: {
     gap: spacing.md,
