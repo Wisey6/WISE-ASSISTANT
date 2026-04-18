@@ -7,6 +7,15 @@ import {
 } from './secureStorage';
 
 /**
+ * Google OAuth Web client ID for Tyler's personal project. Seeded on
+ * first launch so the user doesn't have to paste it. If they ever
+ * rotate it, Profile → Credentials wins (secure-store is checked
+ * first by `googleClientId()` in services/oauth.ts).
+ */
+const GOOGLE_CLIENT_ID_FALLBACK =
+  '513928185671-78sh449l0o0m6rconjf4q7ok69t5vui7.apps.googleusercontent.com';
+
+/**
  * On every app launch, reconcile "connected?" state with what we
  * actually have tokens for. Runs once; idempotent.
  *
@@ -32,6 +41,18 @@ export async function reconcileIntegrations(): Promise<void> {
   }
 
   // -- Google ------------------------------------------------------------
+  // Seed the OAuth client ID so "Connect Google" works without a paste.
+  const existingGoogleClientId = await getSecret(SECRET_KEYS.googleClientId);
+  const envGoogleClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB ??
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+  if (!existingGoogleClientId) {
+    await setSecret(
+      SECRET_KEYS.googleClientId,
+      envGoogleClientId || GOOGLE_CLIENT_ID_FALLBACK,
+    );
+  }
+
   const googleAccess = await getSecret(SECRET_KEYS.googleAccessToken);
   if (googleAccess && !store.providers.google.connected) {
     store.setConnected('google', 'Google account');
