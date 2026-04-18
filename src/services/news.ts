@@ -1,7 +1,9 @@
 import type {
   AnthropicUpdate,
+  CryptoMover,
   FootballFixture,
   FootballHeadline,
+  StockMover,
   WeatherDaily,
   WeatherForecast,
 } from '@/types/news';
@@ -151,6 +153,72 @@ export async function fetchAnthropicUpdates(
       if (out.length >= limit) break;
     }
     return out;
+  } catch {
+    return [];
+  }
+}
+
+/** ---------------------------- crypto / stocks --------------------------- */
+
+const COINGECKO_URL =
+  'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=price_change_percentage_24h_desc&per_page=10&page=1&price_change_percentage=24h';
+
+const ALPHA_MOVERS_URL =
+  'https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=';
+
+export async function fetchCryptoMovers(limit = 5): Promise<CryptoMover[]> {
+  try {
+    const res = await fetch(COINGECKO_URL);
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      id: string;
+      symbol: string;
+      name: string;
+      current_price: number;
+      price_change_percentage_24h: number;
+    }[];
+    // Interleave top gainers + top losers to give a real "biggest movers" view.
+    const gainers = data.slice(0, limit);
+    const losersRes = await fetch(
+      COINGECKO_URL.replace('desc', 'asc'),
+    ).catch(() => null);
+    const losers =
+      losersRes && losersRes.ok
+        ? ((await losersRes.json()) as typeof data).slice(0, limit)
+        : [];
+    return [...gainers, ...losers].map((c) => ({
+      id: c.id,
+      symbol: c.symbol.toUpperCase(),
+      name: c.name,
+      price: c.current_price,
+      changePct24h: c.price_change_percentage_24h ?? 0,
+      url: `https://www.coingecko.com/en/coins/${c.id}`,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchStockMovers(limit = 5): Promise<StockMover[]> {
+  const key = process.env.EXPO_PUBLIC_ALPHA_VANTAGE_KEY;
+  if (!key) return [];
+  try {
+    const res = await fetch(`${ALPHA_MOVERS_URL}${encodeURIComponent(key)}`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      top_gainers?: { ticker: string; price: string; change_percentage: string }[];
+      top_losers?: { ticker: string; price: string; change_percentage: string }[];
+    };
+    const toMover = (
+      r: { ticker: string; price: string; change_percentage: string },
+    ): StockMover => ({
+      symbol: r.ticker,
+      price: Number(r.price),
+      changePct: Number(String(r.change_percentage).replace('%', '')),
+    });
+    const gainers = (data.top_gainers ?? []).slice(0, limit).map(toMover);
+    const losers = (data.top_losers ?? []).slice(0, limit).map(toMover);
+    return [...gainers, ...losers];
   } catch {
     return [];
   }

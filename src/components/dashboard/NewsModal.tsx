@@ -15,8 +15,10 @@ import { colors, lightPalette, radius, spacing, typography } from '@/theme';
 import { useNewsStore } from '@/store/useNewsStore';
 import type {
   AnthropicUpdate,
+  CryptoMover,
   FootballFixture,
   FootballHeadline,
+  StockMover,
 } from '@/types/news';
 
 interface Props {
@@ -29,6 +31,8 @@ export const NewsModal: React.FC<Props> = ({ visible, onClose }) => {
   const weather = useNewsStore((s) => s.weather);
   const football = useNewsStore((s) => s.football);
   const anthropic = useNewsStore((s) => s.anthropic);
+  const crypto = useNewsStore((s) => s.crypto);
+  const stocks = useNewsStore((s) => s.stocks);
   const isRefreshing = useNewsStore((s) => s.isRefreshing);
   const refresh = useNewsStore((s) => s.refresh);
 
@@ -97,6 +101,47 @@ export const NewsModal: React.FC<Props> = ({ visible, onClose }) => {
               ))
             ) : (
               <Text style={[typography.body, styles.empty]}>Loading weather…</Text>
+            )}
+          </Section>
+
+          {/* Markets — crypto + stocks */}
+          <Section label="BIGGEST MOVERS — 24H">
+            {crypto.length === 0 && stocks.length === 0 ? (
+              <Text style={[typography.body, styles.empty]}>
+                Loading markets…
+              </Text>
+            ) : (
+              <>
+                {crypto.map((c) => (
+                  <MoverRow
+                    key={`crypto-${c.id}`}
+                    kind="crypto"
+                    item={c}
+                  />
+                ))}
+                {stocks.length === 0 && !process.env.EXPO_PUBLIC_ALPHA_VANTAGE_KEY ? (
+                  <Text
+                    style={[
+                      typography.caption,
+                      {
+                        color: lightPalette.textTertiary,
+                        paddingHorizontal: spacing.lg,
+                        paddingVertical: spacing.md,
+                      },
+                    ]}
+                  >
+                    Add EXPO_PUBLIC_ALPHA_VANTAGE_KEY to .env for stock movers.
+                  </Text>
+                ) : (
+                  stocks.map((s) => (
+                    <MoverRow
+                      key={`stock-${s.symbol}`}
+                      kind="stock"
+                      item={s}
+                    />
+                  ))
+                )}
+              </>
             )}
           </Section>
 
@@ -192,6 +237,78 @@ const FootballItem: React.FC<{ item: FootballFixture | FootballHeadline }> = ({
   );
 };
 
+type MoverProps =
+  | { kind: 'crypto'; item: CryptoMover }
+  | { kind: 'stock'; item: StockMover };
+
+const MoverRow: React.FC<MoverProps> = (props) => {
+  const symbol =
+    props.kind === 'crypto' ? props.item.symbol : props.item.symbol;
+  const name =
+    props.kind === 'crypto' ? props.item.name : props.item.name ?? props.item.symbol;
+  const price = props.kind === 'crypto' ? props.item.price : props.item.price;
+  const change =
+    props.kind === 'crypto'
+      ? props.item.changePct24h
+      : props.item.changePct;
+  const up = change >= 0;
+  const url = props.kind === 'crypto' ? props.item.url : undefined;
+  return (
+    <Pressable
+      style={styles.moverRow}
+      onPress={() => url && Linking.openURL(url).catch(() => undefined)}
+    >
+      <Text
+        style={[typography.caption, { color: lightPalette.textTertiary, width: 60 }]}
+      >
+        {props.kind === 'crypto' ? 'CRYPTO' : 'STOCK'}
+      </Text>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={[typography.body, { color: lightPalette.textPrimary }]}
+          weight="600"
+          numberOfLines={1}
+        >
+          {symbol}
+        </Text>
+        <Text
+          style={[typography.caption, { color: lightPalette.textTertiary }]}
+          numberOfLines={1}
+        >
+          {name}
+        </Text>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text
+          style={[
+            typography.body,
+            { color: lightPalette.textPrimary },
+          ]}
+          weight="600"
+        >
+          {formatPrice(price)}
+        </Text>
+        <Text
+          style={[
+            typography.caption,
+            { color: up ? '#4F6B52' : '#A65A4A' },
+          ]}
+          weight="600"
+        >
+          {up ? '+' : ''}
+          {change.toFixed(2)}%
+        </Text>
+      </View>
+    </Pressable>
+  );
+};
+
+function formatPrice(p: number): string {
+  if (p >= 1000) return `$${p.toFixed(0)}`;
+  if (p >= 1) return `$${p.toFixed(2)}`;
+  return `$${p.toFixed(4)}`;
+}
+
 const AnthropicItem: React.FC<{ item: AnthropicUpdate }> = ({ item }) => (
   <Pressable
     style={styles.anthropicRow}
@@ -278,6 +395,15 @@ const styles = StyleSheet.create({
     borderBottomColor: lightPalette.divider,
   },
   anthropicRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: lightPalette.divider,
+  },
+  moverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,

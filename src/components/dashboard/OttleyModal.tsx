@@ -9,12 +9,13 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Speech from 'expo-speech';
 
 import { ChatComposer, Icon, Text } from '@/components';
 import { colors, radius, spacing, typography } from '@/theme';
 import { useAssistantStore } from '@/store/useAssistantStore';
 import { useUserStore } from '@/store/useUserStore';
-import { runOttleyTurn, type ToolCallRecord } from '@/services/ottleyAgent';
+import { runOttleyTurn } from '@/services/ottleyAgent';
 import type { AssistantMessage } from '@/types';
 
 interface Props {
@@ -55,7 +56,29 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
   const isThinking = useAssistantStore((s) => s.isThinking);
   const userName = useUserStore((s) => s.user.name);
   const [tools, setTools] = useState<InlineTool[]>([]);
+  const [voiceOn, setVoiceOn] = useState(false);
   const listRef = useRef<FlatList<AssistantMessage>>(null);
+
+  const speak = useCallback((text: string) => {
+    if (!text.trim()) return;
+    Speech.stop();
+    Speech.speak(text, {
+      language: 'en-GB',
+      // iOS "Daniel" is the posh BBC voice; Android falls back to default en-GB.
+      voice: Platform.OS === 'ios' ? 'com.apple.voice.compact.en-GB.Daniel' : undefined,
+      pitch: 1.0,
+      rate: 0.98,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      Speech.stop().catch(() => undefined);
+    }
+    return () => {
+      Speech.stop().catch(() => undefined);
+    };
+  }, [visible]);
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -81,6 +104,7 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
           },
         });
         appendAssistant(result.text);
+        if (voiceOn) speak(result.text);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         appendAssistant(`Well, that broke: ${msg}`);
@@ -89,7 +113,7 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
         setTools([]);
       }
     },
-    [appendUser, appendAssistant, setThinking, userName],
+    [appendUser, appendAssistant, setThinking, userName, voiceOn, speak],
   );
 
   useEffect(() => {
@@ -102,12 +126,28 @@ export const OttleyModal: React.FC<Props> = ({ visible, onClose }) => {
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={[typography.caption, styles.eyebrow]}>OTTLEY</Text>
             <Text style={[typography.title3, styles.title]}>
               Hey {userName}.
             </Text>
           </View>
+          <Pressable
+            onPress={() => {
+              if (voiceOn) Speech.stop();
+              setVoiceOn((v) => !v);
+            }}
+            hitSlop={10}
+            style={[styles.voiceBtn, voiceOn && styles.voiceBtnOn]}
+          >
+            <Text
+              variant="caption"
+              color={voiceOn ? colors.textInverse : colors.text}
+              weight="600"
+            >
+              {voiceOn ? 'VOICE · ON' : 'VOICE'}
+            </Text>
+          </Pressable>
           <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
             <Icon name="close" size={22} color={colors.text} />
           </Pressable>
@@ -187,11 +227,20 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+  },
+  voiceBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  voiceBtnOn: {
+    backgroundColor: colors.surfaceInverse,
   },
   eyebrow: {
     color: colors.textTertiary,

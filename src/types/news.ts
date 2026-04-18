@@ -36,3 +36,19 @@ export interface AnthropicUpdate {
   publishedAt: string;
   summary?: string;
 }
+
+export interface CryptoMover {
+  id: string;
+  symbol: string;
+  name: string;
+  price: number;
+  changePct24h: number;
+  url?: string;
+}
+
+export interface StockMover {
+  symbol: string;
+  name?: string;
+  price: number;
+  changePct: number;
+}

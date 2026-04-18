@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Icon, Screen, Text } from '@/components';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -9,27 +9,40 @@ import { useUserStore } from '@/store/useUserStore';
 import { useIntegrationsStore } from '@/store/useIntegrationsStore';
 import { sendWeekAheadNow } from '@/services/notifications';
 import {
+  connectGoogle,
+  connectMicrosoft,
+  disconnectGoogle,
+  disconnectMicrosoft,
+} from '@/services/oauth';
+import {
+  SECRET_KEYS,
   deleteSecret,
   getSecret,
-  SECRET_KEYS,
   setSecret,
 } from '@/services/secureStorage';
-import { resetClient } from '@/services/anthropic';
+import type { IntegrationId } from '@/types/integrations';
 
+/**
+ * Profile & settings. The Anthropic API key is baked in via
+ * .env (EXPO_PUBLIC_ANTHROPIC_API_KEY) — no runtime UI for it. This
+ * screen handles your name, notifications, and OAuth connections.
+ */
 export const ProfileScreen: React.FC = () => {
   const user = useUserStore((s) => s.user);
   const setName = useUserStore((s) => s.setName);
   const resetAssistant = useAssistantStore((s) => s.reset);
   const tasks = useTaskStore((s) => s.tasks);
   const providers = useIntegrationsStore((s) => s.providers);
+  const setConnected = useIntegrationsStore((s) => s.setConnected);
+  const setDisconnected = useIntegrationsStore((s) => s.setDisconnected);
 
   const [draftName, setDraftName] = useState(user.name);
-  const [apiKey, setApiKey] = useState('');
-  const [keySet, setKeySet] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
+  const [clickupDraft, setClickupDraft] = useState('');
+  const [clickupSet, setClickupSet] = useState(false);
+  const [busy, setBusy] = useState<IntegrationId | null>(null);
 
   useEffect(() => {
-    getSecret(SECRET_KEYS.anthropicApiKey).then((v) => setKeySet(Boolean(v)));
+    getSecret(SECRET_KEYS.clickupToken).then((v) => setClickupSet(Boolean(v)));
   }, []);
 
   const handleSaveName = () => {
@@ -38,22 +51,56 @@ export const ProfileScreen: React.FC = () => {
     }
   };
 
-  const handleSaveKey = async () => {
-    const value = apiKey.trim();
-    if (!value) return;
-    setSavingKey(true);
-    await setSecret(SECRET_KEYS.anthropicApiKey, value);
-    resetClient();
-    setKeySet(true);
-    setApiKey('');
-    setSavingKey(false);
-  };
+  const handleConnectGoogle = useCallback(async () => {
+    setBusy('google');
+    try {
+      const ok = await connectGoogle();
+      if (ok) setConnected('google', 'Google account');
+    } catch (err) {
+      Alert.alert('Google connect failed', errMsg(err));
+    } finally {
+      setBusy(null);
+    }
+  }, [setConnected]);
 
-  const handleClearKey = async () => {
-    await deleteSecret(SECRET_KEYS.anthropicApiKey);
-    resetClient();
-    setKeySet(false);
-  };
+  const handleDisconnectGoogle = useCallback(async () => {
+    await disconnectGoogle();
+    setDisconnected('google');
+  }, [setDisconnected]);
+
+  const handleConnectMicrosoft = useCallback(async () => {
+    setBusy('microsoft');
+    try {
+      const ok = await connectMicrosoft();
+      if (ok) setConnected('microsoft', 'Microsoft account');
+    } catch (err) {
+      Alert.alert('Microsoft connect failed', errMsg(err));
+    } finally {
+      setBusy(null);
+    }
+  }, [setConnected]);
+
+  const handleDisconnectMicrosoft = useCallback(async () => {
+    await disconnectMicrosoft();
+    setDisconnected('microsoft');
+  }, [setDisconnected]);
+
+  const handleSaveClickUp = useCallback(async () => {
+    const v = clickupDraft.trim();
+    if (!v) return;
+    setBusy('clickup');
+    await setSecret(SECRET_KEYS.clickupToken, v);
+    setConnected('clickup', 'Personal token');
+    setClickupSet(true);
+    setClickupDraft('');
+    setBusy(null);
+  }, [clickupDraft, setConnected]);
+
+  const handleClearClickUp = useCallback(async () => {
+    await deleteSecret(SECRET_KEYS.clickupToken);
+    setDisconnected('clickup');
+    setClickupSet(false);
+  }, [setDisconnected]);
 
   const handleSendWeekAhead = async () => {
     const upcoming = tasks
@@ -73,9 +120,7 @@ export const ProfileScreen: React.FC = () => {
         Small knobs. Nothing fussy.
       </Text>
 
-      <Text variant="caption" style={styles.sectionLabel}>
-        YOUR NAME
-      </Text>
+      <Text variant="caption" style={styles.sectionLabel}>YOUR NAME</Text>
       <View style={styles.field}>
         <TextInput
           value={draftName}
@@ -96,94 +141,72 @@ export const ProfileScreen: React.FC = () => {
         variant="caption"
         style={[styles.sectionLabel, { marginTop: spacing.xl }]}
       >
-        ANTHROPIC API KEY
-      </Text>
-      {keySet ? (
-        <View style={styles.keyRow}>
-          <View style={{ flex: 1 }}>
-            <Text variant="body" weight="500">
-              Key saved
-            </Text>
-            <Text variant="footnote" style={{ color: colors.textSecondary }}>
-              Stored in the device secure store.
-            </Text>
-          </View>
-          <Pressable onPress={handleClearKey} style={styles.clearBtn} hitSlop={6}>
-            <Text variant="footnote" color={colors.danger}>
-              Remove
-            </Text>
-          </Pressable>
-        </View>
-      ) : (
-        <>
-          <View style={styles.field}>
-            <TextInput
-              value={apiKey}
-              onChangeText={setApiKey}
-              placeholder="sk-ant-…"
-              placeholderTextColor={colors.textTertiary}
-              style={[typography.body, styles.input]}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-            />
-          </View>
-          <Pressable
-            onPress={handleSaveKey}
-            disabled={savingKey || !apiKey.trim()}
-            style={[
-              styles.primaryBtn,
-              (savingKey || !apiKey.trim()) && styles.primaryBtnDisabled,
-            ]}
-          >
-            <Text variant="headline" color={colors.textInverse}>
-              {savingKey ? 'Saving…' : 'Save key'}
-            </Text>
-          </Pressable>
-        </>
-      )}
-      <Text variant="footnote" style={styles.hint}>
-        Key lives only on this device. Personal use — don't share the app.
+        CONNECTIONS
       </Text>
 
-      <Text
-        variant="caption"
-        style={[styles.sectionLabel, { marginTop: spacing.xl }]}
-      >
-        INTEGRATIONS
-      </Text>
-      <View style={styles.integrationsCard}>
-        {(['clickup', 'google', 'microsoft'] as const).map((id, i) => {
-          const p = providers[id];
-          return (
-            <View
-              key={id}
-              style={[
-                styles.integrationRow,
-                i > 0 && styles.integrationDivider,
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text variant="body" weight="500">
-                  {p.label}
-                </Text>
-                <Text
-                  variant="footnote"
-                  style={{ color: colors.textTertiary }}
-                >
-                  {p.connected ? 'Connected' : 'Not connected'}
-                </Text>
-              </View>
-              <Text variant="footnote" style={{ color: colors.textSecondary }}>
-                Coming soon
+      <View style={styles.card}>
+        <ConnectionRow
+          label="Google (Gmail, Calendar, Drive)"
+          connected={providers.google.connected}
+          busy={busy === 'google'}
+          onConnect={handleConnectGoogle}
+          onDisconnect={handleDisconnectGoogle}
+          first
+        />
+        <ConnectionRow
+          label="Microsoft (Outlook + Teams)"
+          connected={providers.microsoft.connected}
+          busy={busy === 'microsoft'}
+          onConnect={handleConnectMicrosoft}
+          onDisconnect={handleDisconnectMicrosoft}
+        />
+
+        <View style={[styles.connectionRow, styles.connectionRowDivider]}>
+          <View style={{ flex: 1 }}>
+            <Text variant="body" weight="500">ClickUp</Text>
+            <Text variant="footnote" style={{ color: colors.textTertiary }}>
+              {clickupSet ? 'Token saved' : 'Personal API token'}
+            </Text>
+          </View>
+          {clickupSet ? (
+            <Pressable onPress={handleClearClickUp} hitSlop={6}>
+              <Text variant="footnote" color={colors.danger} weight="600">
+                Remove
               </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.clickupRow}>
+              <TextInput
+                value={clickupDraft}
+                onChangeText={setClickupDraft}
+                placeholder="pk_…"
+                placeholderTextColor={colors.textTertiary}
+                style={[typography.footnote, styles.clickupInput]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+              />
+              <Pressable
+                onPress={handleSaveClickUp}
+                disabled={!clickupDraft.trim() || busy === 'clickup'}
+                style={[
+                  styles.saveBtn,
+                  (!clickupDraft.trim() || busy === 'clickup') && styles.saveBtnDisabled,
+                ]}
+                hitSlop={6}
+              >
+                <Text variant="caption" color={colors.textInverse} weight="600">
+                  SAVE
+                </Text>
+              </Pressable>
             </View>
-          );
-        })}
+          )}
+        </View>
       </View>
+
       <Text variant="footnote" style={styles.hint}>
-        OAuth connect flows are next. For now, drop tokens directly into the
-        env or via debug.
+        Tokens live in your device's secure store. Revoke them in each
+        provider's settings when you're done.
       </Text>
 
       <Pressable
@@ -207,6 +230,63 @@ export const ProfileScreen: React.FC = () => {
   );
 };
 
+interface ConnRowProps {
+  label: string;
+  connected: boolean;
+  busy: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  first?: boolean;
+}
+
+const ConnectionRow: React.FC<ConnRowProps> = ({
+  label,
+  connected,
+  busy,
+  onConnect,
+  onDisconnect,
+  first,
+}) => (
+  <View
+    style={[
+      styles.connectionRow,
+      !first && styles.connectionRowDivider,
+    ]}
+  >
+    <View style={{ flex: 1 }}>
+      <Text variant="body" weight="500">
+        {label}
+      </Text>
+      <Text variant="footnote" style={{ color: colors.textTertiary }}>
+        {connected ? 'Connected' : 'Not connected'}
+      </Text>
+    </View>
+    <Pressable
+      onPress={connected ? onDisconnect : onConnect}
+      disabled={busy}
+      hitSlop={6}
+      style={[
+        styles.connectBtn,
+        connected ? styles.connectBtnSecondary : styles.connectBtnPrimary,
+        busy && styles.saveBtnDisabled,
+      ]}
+    >
+      <Text
+        variant="caption"
+        color={connected ? colors.text : colors.textInverse}
+        weight="600"
+      >
+        {busy ? '…' : connected ? 'DISCONNECT' : 'CONNECT'}
+      </Text>
+    </Pressable>
+  </View>
+);
+
+function errMsg(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 const styles = StyleSheet.create({
   sectionLabel: {
     marginBottom: spacing.sm,
@@ -226,19 +306,54 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     color: colors.textTertiary,
   },
-  keyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  connectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  clearBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+  connectionRowDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  connectBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+  },
+  connectBtnPrimary: {
+    backgroundColor: colors.text,
+  },
+  connectBtnSecondary: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  clickupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  clickupInput: {
+    width: 120,
+    paddingVertical: 4,
+    color: colors.text,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  saveBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.text,
+  },
+  saveBtnDisabled: {
+    opacity: 0.5,
   },
   primaryBtn: {
     marginTop: spacing.md,
@@ -250,26 +365,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: radius.pill,
     backgroundColor: colors.text,
-  },
-  primaryBtnDisabled: {
-    opacity: 0.5,
-  },
-  integrationsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  integrationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  integrationDivider: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.divider,
   },
   secondaryBtn: {
     marginTop: spacing.lg,

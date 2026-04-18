@@ -71,7 +71,7 @@ export const DashboardScreen: React.FC = () => {
                 <CategoryBreakdown />
               </GridCell>
               <GridCell span={4}>
-                <NewsPreview />
+                <NewsPreview onPress={() => setNewsOpen(true)} />
               </GridCell>
               <GridCell span={4}>
                 <JokeCard />

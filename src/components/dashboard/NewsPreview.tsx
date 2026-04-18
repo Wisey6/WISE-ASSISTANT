@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { lightPalette, spacing, typography } from '@/theme';
 import { Text } from '@/components/Text';
@@ -8,7 +8,11 @@ import type { FootballFixture, FootballHeadline } from '@/types/news';
 
 import { DashboardCard } from './DashboardCard';
 
-export const NewsPreview: React.FC = () => {
+interface Props {
+  onPress?: () => void;
+}
+
+export const NewsPreview: React.FC<Props> = ({ onPress }) => {
   const weather = useNewsStore((s) => s.weather);
   const football = useNewsStore((s) => s.football);
   const anthropic = useNewsStore((s) => s.anthropic);
@@ -22,10 +26,21 @@ export const NewsPreview: React.FC = () => {
   const today = weather?.days[0];
   const nextFootball = football[0];
   const latestAnthropic = anthropic[0];
+  const crypto = useNewsStore((s) => s.crypto);
+  const stocks = useNewsStore((s) => s.stocks);
+  const topCrypto = crypto[0];
+  const topStock = stocks[0];
 
-  return (
+  const body = (
     <DashboardCard>
-      <Text style={[typography.caption, styles.eyebrow]}>TAILORED NEWS</Text>
+      <View style={styles.header}>
+        <Text style={[typography.caption, styles.eyebrow]}>TAILORED NEWS</Text>
+        {onPress && (
+          <Text style={[typography.caption, styles.cta]} weight="600">
+            OPEN →
+          </Text>
+        )}
+      </View>
       <View style={styles.rows}>
         <Row
           label="Weather"
@@ -40,12 +55,39 @@ export const NewsPreview: React.FC = () => {
           value={nextFootball ? footballLine(nextFootball) : '—'}
         />
         <Row
+          label="Crypto"
+          value={
+            topCrypto
+              ? `${topCrypto.symbol} ${topCrypto.changePct24h > 0 ? '+' : ''}${topCrypto.changePct24h.toFixed(1)}%`
+              : '—'
+          }
+        />
+        <Row
+          label="Stocks"
+          value={
+            topStock
+              ? `${topStock.symbol} ${topStock.changePct > 0 ? '+' : ''}${topStock.changePct.toFixed(1)}%`
+              : 'Add ALPHA_VANTAGE_KEY'
+          }
+        />
+        <Row
           label="Anthropic"
           value={latestAnthropic?.title ?? 'No new updates'}
         />
       </View>
     </DashboardCard>
   );
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress}>
+        {({ pressed }) => (
+          <View style={pressed ? styles.pressed : undefined}>{body}</View>
+        )}
+      </Pressable>
+    );
+  }
+  return body;
 };
 
 const Row: React.FC<{ label: string; value: string }> = ({ label, value }) => (
@@ -76,10 +118,19 @@ function footballLine(item: FootballHeadline | FootballFixture): string {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
   eyebrow: {
     color: lightPalette.textTertiary,
     letterSpacing: 1.2,
-    marginBottom: spacing.md,
+  },
+  cta: {
+    color: lightPalette.textPrimary,
+    letterSpacing: 1.2,
   },
   rows: {
     gap: spacing.sm,
@@ -88,5 +139,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.996 }],
   },
 });
