@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wise Assistant — OAuth bounce</title>
+  <style>
+    html,body{background:#0C0C0E;color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:0;padding:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center}
+    h1{font-weight:600;font-size:18px;margin:0 0 8px}
+    p{margin:6px 0;opacity:.7;font-size:14px}
+    a{color:#2F7BFF}
+    code{background:#1a1a1c;padding:2px 6px;border-radius:4px;font-size:12px}
+  </style>
+</head>
+<body>
+  <h1>Bouncing you back to Wise Assistant…</h1>
+  <p id="msg">If it doesn't open automatically, tap the link below.</p>
+  <p><a id="deeplink" href="#">Open Wise Assistant</a></p>
+  <script>
+    // OAuth providers land here with ?code=...&state=<base64-url-encoded-exp-callback>&...
+    // We decode `state`, append everything back, and open the exp:// URL
+    // which relaunches Expo Go with the authorization code.
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var stateRaw = params.get('state');
+      if (!stateRaw) {
+        document.getElementById('msg').textContent =
+          'Missing state param — this page must be opened as an OAuth redirect.';
+        return;
+      }
+      var target;
+      try {
+        // base64url → regular base64 → decode
+        var b64 = stateRaw.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        target = atob(b64);
+      } catch (err) {
+        document.getElementById('msg').textContent =
+          'Could not decode state: ' + (err && err.message);
+        return;
+      }
+      // Re-forward every query param (code, error, scope, authuser, ...).
+      // state is already carried inside target decoding but we pass the
+      // literal string through too so the SDK's CSRF check stays happy.
+      var out = target + (target.indexOf('?') === -1 ? '?' : '&');
+      var parts = [];
+      params.forEach(function (v, k) { parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v)); });
+      out += parts.join('&');
+
+      document.getElementById('deeplink').href = out;
+      window.location.replace(out);
+    })();
+  </script>
+</body>
+</html>

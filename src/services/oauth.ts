@@ -10,6 +10,46 @@ import {
 
 WebBrowser.maybeCompleteAuthSession();
 
+/**
+ * Google / Microsoft refuse `exp://…` as a redirect URI. In Expo Go
+ * we bounce through a static HTML page on GitHub Pages that reads
+ * `state` (which we populate with the real exp:// URL) and then
+ * deep-links back into Expo Go with the ?code= query preserved.
+ *
+ * Set EXPO_PUBLIC_OAUTH_PROXY_URL to something like
+ *   https://<user>.github.io/wise-assistant/oauth-callback.html
+ * to enable. Leave blank to fall back to the raw Expo URL — fine for
+ * development builds with a custom scheme registered natively.
+ */
+const PROXY_URL = process.env.EXPO_PUBLIC_OAUTH_PROXY_URL?.trim() || null;
+
+function b64urlEncode(value: string): string {
+  // btoa works on ASCII only; our value is already an ASCII URL.
+  // eslint-disable-next-line no-undef
+  const b64 =
+    typeof btoa === 'function'
+      ? btoa(value)
+      : Buffer.from(value, 'utf-8').toString('base64');
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * When a proxy is configured we return the proxy URL as the redirect
+ * and pack the real Expo callback into `state` so the HTML page can
+ * forward the ?code back. Returns both the URI to hand to Google and
+ * the state payload to thread through the request/exchange pair.
+ */
+function proxyOrDirect(directUri: string): {
+  redirectUri: string;
+  state?: string;
+} {
+  if (!PROXY_URL) return { redirectUri: directUri };
+  return {
+    redirectUri: PROXY_URL,
+    state: b64urlEncode(directUri),
+  };
+}
+
 /** --------------------------- Google OAuth --------------------------- */
 
 const GOOGLE_DISCOVERY = {
@@ -45,14 +85,16 @@ export async function connectGoogle(): Promise<boolean> {
     );
   }
 
-  const redirectUri = AuthSession.makeRedirectUri({
+  const directUri = AuthSession.makeRedirectUri({
     scheme: 'wiseassistant',
     path: 'oauth/google',
   });
+  const { redirectUri, state } = proxyOrDirect(directUri);
+
   if (__DEV__) {
     // eslint-disable-next-line no-console
     console.log(
-      `[OAuth] Google redirect URI → register this exact string in Google Cloud Console:\n  ${redirectUri}`,
+      `[OAuth] Google — register this URI in Google Cloud:\n  ${redirectUri}\n(inner exp target: ${directUri})`,
     );
   }
 
@@ -62,6 +104,7 @@ export async function connectGoogle(): Promise<boolean> {
     scopes: GOOGLE_SCOPES,
     responseType: AuthSession.ResponseType.Code,
     usePKCE: true,
+    state,
     extraParams: { access_type: 'offline', prompt: 'consent' },
   });
 
@@ -180,14 +223,16 @@ export async function connectMicrosoft(): Promise<boolean> {
     );
   }
 
-  const redirectUri = AuthSession.makeRedirectUri({
+  const directUri = AuthSession.makeRedirectUri({
     scheme: 'wiseassistant',
     path: 'oauth/microsoft',
   });
+  const { redirectUri, state } = proxyOrDirect(directUri);
+
   if (__DEV__) {
     // eslint-disable-next-line no-console
     console.log(
-      `[OAuth] Microsoft redirect URI → register this exact string in entra.microsoft.com:\n  ${redirectUri}`,
+      `[OAuth] Microsoft — register this URI in entra.microsoft.com:\n  ${redirectUri}\n(inner exp target: ${directUri})`,
     );
   }
 
@@ -198,6 +243,7 @@ export async function connectMicrosoft(): Promise<boolean> {
     scopes: MS_SCOPES,
     responseType: AuthSession.ResponseType.Code,
     usePKCE: true,
+    state,
   });
 
   await request.makeAuthUrlAsync(discovery);
