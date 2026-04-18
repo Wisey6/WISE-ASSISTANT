@@ -47,22 +47,20 @@ export function resetClient(): void {
 }
 
 /**
- * The full set of tools Ottley can call. Claude's native
- * `web_search_20250305` server tool is included — executes on
- * Anthropic's infrastructure, no local dispatcher needed.
+ * The full set of tools Ottley can call. Split into two bundles:
+ *  - CHAT_TOOLS: lean, no paid server-side tools. Used by default.
+ *  - RESEARCH_TOOLS: CHAT_TOOLS + web_search. Opt-in via deepThink.
  *
- * Read-only tools (list_*, get_*, search_*, read_*) execute directly
- * in the local dispatcher. Write tools (propose_*) construct a
- * Suggestion that the user approves on the Dashboard feed — nothing
- * writes to ClickUp / Calendar / Outlook without explicit approval.
+ * The last tool in each bundle carries `cache_control` so the whole
+ * tools block is cached as a prefix — without it, every request pays
+ * full price for ~2KB of definitions.
+ *
+ * Read-only tools execute in the local dispatcher. Write tools
+ * (propose_*) construct a Suggestion that the user approves on the
+ * Dashboard feed — nothing touches ClickUp / Calendar / Outlook
+ * without explicit approval.
  */
-export const TOOLS: Anthropic.Messages.ToolUnion[] = [
-  {
-    type: 'web_search_20250305',
-    name: 'web_search',
-    max_uses: 5,
-  },
-
+const BASE_TOOLS: Anthropic.Messages.ToolUnion[] = [
   {
     name: 'list_clickup_tasks',
     description:
@@ -239,15 +237,36 @@ export const TOOLS: Anthropic.Messages.ToolUnion[] = [
   },
 ];
 
+/** Add `cache_control` to the last element so the tools prefix caches. */
+function withTerminalCache(
+  tools: Anthropic.Messages.ToolUnion[],
+): Anthropic.Messages.ToolUnion[] {
+  if (tools.length === 0) return tools;
+  const head = tools.slice(0, -1);
+  const last = tools[tools.length - 1];
+  return [...head, { ...last, cache_control: { type: 'ephemeral' } }];
+}
+
+/** Default chat tools — no server-side paid tools. Cheap per turn. */
+export const CHAT_TOOLS: Anthropic.Messages.ToolUnion[] =
+  withTerminalCache(BASE_TOOLS);
+
+/** Research tools — includes web_search. Only used on deepThink turns. */
+export const RESEARCH_TOOLS: Anthropic.Messages.ToolUnion[] = withTerminalCache([
+  { type: 'web_search_20250305', name: 'web_search', max_uses: 3 },
+  ...BASE_TOOLS,
+]);
+
+/** @deprecated Kept as alias for any callsite still importing TOOLS. */
+export const TOOLS = CHAT_TOOLS;
+
 /**
- * Compact system prompt. The first ~3 KB (role + tool-usage
- * guidelines) is stable between turns and marked for ephemeral
- * caching; context (tasks/events/suggestions) is appended after it.
+ * Frozen system prompt. Do NOT interpolate timestamps, session ids,
+ * or anything that changes per request — that would invalidate the
+ * prompt cache on every call. Today's date is passed in via a user
+ * message (see ottleyAgent) so the cached prefix stays stable.
  */
-export function buildSystemPrompt(
-  userName: string,
-  nowIso: string,
-): string {
+export function buildSystemPrompt(userName: string): string {
   return `You are Ottley — ${userName}'s personal assistant.
 
 PERSONALITY
@@ -259,14 +278,11 @@ CORE RULES
 - Use tools aggressively for facts — never guess calendars, tasks, or news when a tool can tell you.
 - Writes to ClickUp / Google Calendar / Outlook ONLY via propose_* tools. The user approves before anything commits.
 - Read-only tools (list_*, search_*, read_*, get_*) execute directly — use them freely.
-- When asked about the outside world (news, scores, fixtures, weather, prices, definitions), use web_search. Cite results.
+- Outside-world facts (news, scores, fixtures, weather, prices) come from get_news_brief first; web_search is only available on deep-think turns.
 - Dates/times ISO 8601 local. If a date reads as past, roll to next occurrence.
 
 STYLE
 - Short. Specific. No filler.
 - Reference your reads: "three emails from Priya this week" beats "I checked Gmail".
-- If a proposal gets dismissed, don't re-propose the same thing within the same conversation.
-
-TODAY
-Today is ${nowIso}.`;
+- If a proposal gets dismissed, don't re-propose the same thing within the same conversation.`;
 }

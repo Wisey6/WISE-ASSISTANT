@@ -9,9 +9,10 @@ import { toISO } from '@/utils/date';
 
 import {
   buildSystemPrompt,
+  CHAT_TOOLS,
   DEEP_THINK_MODEL,
+  RESEARCH_TOOLS,
   getClient,
-  TOOLS,
   type ModelId,
 } from './anthropic';
 import * as clickup from './clickup';
@@ -21,7 +22,26 @@ import * as drive from './googleDrive';
 import * as graph from './microsoftGraph';
 import * as notif from './notifications';
 
-const MAX_TOOL_ITERATIONS = 8;
+/**
+ * Iteration caps. Chat stays tight — most "what's today" turns need
+ * 1–2 tool hops, not 8. Deep-think turns (scheduled scans) get more
+ * headroom because they pull across mail/tasks/calendar.
+ */
+const MAX_ITERATIONS_CHAT = 4;
+const MAX_ITERATIONS_DEEP = 6;
+
+/**
+ * Rough USD-per-1K-token rates. Only used for the dev-console cost
+ * readout — no billing logic depends on these numbers being exact.
+ */
+const PRICE_PER_1K: Record<
+  string,
+  { input: number; cacheRead: number; output: number }
+> = {
+  'claude-haiku-4-5-20251001': { input: 0.001, cacheRead: 0.0001, output: 0.005 },
+  'claude-sonnet-4-6': { input: 0.003, cacheRead: 0.0003, output: 0.015 },
+  'claude-opus-4-7': { input: 0.005, cacheRead: 0.0005, output: 0.025 },
+};
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -78,23 +98,29 @@ export async function runOttleyTurn(
 
   const preferred = useUserStore.getState().modelPreference;
   const model: ModelId = opts.deepThink ? DEEP_THINK_MODEL : preferred;
-  const system = buildSystemPrompt(userName, new Date().toISOString());
+  const system = buildSystemPrompt(userName);
+  const tools = opts.deepThink ? RESEARCH_TOOLS : CHAT_TOOLS;
+  const maxIterations = opts.deepThink ? MAX_ITERATIONS_DEEP : MAX_ITERATIONS_CHAT;
+  const maxTokens = opts.deepThink ? 2048 : 1024;
+
+  // Inject today's date as a prefix on the user's message rather than
+  // in the system prompt — system stays frozen so the cache hits.
+  const today = new Date().toISOString().slice(0, 10);
+  const userTurn = `<context>Today is ${today}.</context>\n${userMessage}`;
 
   const messages: Anthropic.Messages.MessageParam[] = [
-    ...history.map((h) => ({
-      role: h.role,
-      content: h.content,
-    })),
-    { role: 'user', content: userMessage },
+    ...history.map((h) => ({ role: h.role, content: h.content })),
+    { role: 'user', content: userTurn },
   ];
 
   const toolCalls: ToolCallRecord[] = [];
   let combinedText = '';
+  let totalCostUsd = 0;
 
-  for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
+  for (let i = 0; i < maxIterations; i += 1) {
     const response = await client.messages.create({
       model,
-      max_tokens: 2048,
+      max_tokens: maxTokens,
       system: [
         {
           type: 'text',
@@ -102,9 +128,11 @@ export async function runOttleyTurn(
           cache_control: { type: 'ephemeral' },
         },
       ],
-      tools: TOOLS,
+      tools,
       messages,
     });
+
+    totalCostUsd += logUsage(model, response.usage, i);
 
     const assistantBlocks = response.content;
     messages.push({ role: 'assistant', content: assistantBlocks });
@@ -153,11 +181,43 @@ export async function runOttleyTurn(
     messages.push({ role: 'user', content: toolResults });
   }
 
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Ottley] turn done · ${model} · ${toolCalls.length} tool hops · ≈$${totalCostUsd.toFixed(4)}`,
+    );
+  }
+
   return {
-    text: combinedText.trim() || "Done — nothing more to say.",
+    text: combinedText.trim() || 'Done — nothing more to say.',
     toolCalls,
     modelUsed: model,
   };
+}
+
+function logUsage(
+  model: ModelId,
+  usage: Anthropic.Messages.Usage,
+  iter: number,
+): number {
+  const price = PRICE_PER_1K[model] ?? PRICE_PER_1K['claude-haiku-4-5-20251001'];
+  const inTok = usage.input_tokens ?? 0;
+  const cachedIn = usage.cache_read_input_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  const outTok = usage.output_tokens ?? 0;
+  // Cache writes cost 1.25× base input; treat them as input for a rough bound.
+  const cost =
+    (inTok / 1000) * price.input +
+    (cacheWrite / 1000) * price.input * 1.25 +
+    (cachedIn / 1000) * price.cacheRead +
+    (outTok / 1000) * price.output;
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Ottley] iter ${iter}: in=${inTok} cache_read=${cachedIn} cache_write=${cacheWrite} out=${outTok} ≈$${cost.toFixed(4)}`,
+    );
+  }
+  return cost;
 }
 
 async function dispatchTool(
