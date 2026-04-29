@@ -6,9 +6,30 @@ You said go automatically — I did. Here's the rundown so you can audit before 
 
 ## What got built
 
-### Phase 3 — Excel ingestion (stubbed, not run)
-- `wise-os/scripts/excel_to_notion.py` — idempotent upsert pattern. Has `--inspect-only` and `--dry-run` modes.
-- **You still need to:** drop `wise-ai.xlsx` into `wise-os/data/`, run `python3 excel_to_notion.py --inspect-only`, then we fill in the column→property `MAPPINGS` together. I didn't have the file to do this autonomously.
+### Phase 3 — Excel ingestion (DONE — via Google Drive MCP)
+You sent the workbook as a Google Sheet (`WISE AI - Business`). I read it directly via Google Drive MCP and imported all the live data manually into Notion. The workbook turned out to be a launch playbook, not a CRM dump — six tabs, mostly narrative + targets + a handful of populated rows.
+
+**What was imported:**
+| Source tab | Rows | Destination |
+|---|---|---|
+| Master Checklist | 70 tasks | Tasks DB (with new Phase + Week columns) |
+| Path to $10k | 8 monthly targets | NEW: MRR Plan DB (under Operations) |
+| Client Pipeline | 1 row (Bundaberg) | Clients + Pipeline DBs |
+| Financial Tracker | 3 expense rows | NEW: Transactions DB (under Operations) |
+| Daily Log | 1 row (29/04) | NEW: Daily Log DB (under Operations) |
+| Pricing & Offers | 4 tiers + rules | Updated 📄 Proposal template + new 🧭 Strategy & Principles page |
+| Home (principles, funnel maths, daily protocol) | narrative | 🧭 Strategy & Principles page (under Operations) |
+
+**Schema changes:**
+- Tasks DB: added `Phase` (12 options matching workbook phases) + `Week` (rich text)
+- 3 new DBs: MRR Plan, Transactions, Daily Log — all under Operations
+- Proposal template: rewritten with workbook's actual 4-tier pricing ($1.5k Audit / $4.5–8.5k Build Sprint / $1.25k Standard / $2.5k Plus retainer) — replaces my placeholder pricing
+
+**Bundaberg-specific links wired:**
+- Bundaberg client (Clients DB) ↔ Bundaberg Audit deal (Pipeline DB) ↔ all 11 Bundaberg-related Tasks (Prep + Delivery + Post-Delivery phases) — open the Client page and you'll see every related artefact in one place.
+
+**Re-sync caveat:**
+The `excel_to_notion.py` script targets local `.xlsx` files. To resync edits you make in the Google Sheet later, you'd need to either (a) export the sheet to .xlsx, drop it in `wise-os/data/`, and run the script after filling in `MAPPINGS` with the priority/date translations the workbook needs (High→P1, DD/MM/YYYY→ISO), or (b) ditch the workbook and work directly in Notion (recommended — it's all there now).
 
 ### Phase 4 — Dashboard (Notion: 📊 Dashboard)
 - 4 section scaffold (Today / Money / Pipeline / Client Health) with intro callouts.
