@@ -100,4 +100,17 @@ Plus `wise-os/README.md`, `wise-os/docs/setup.md`, `wise-os/docs/deployment.md`,
 4. Drop your Excel into `wise-os/data/wise-ai.xlsx` and ping me to do Phase 3 mapping properly.
 5. Set up the integration token + scripts when you have 30 minutes.
 
+---
+
+## Update — Dashboard rebuild (per Tyler feedback "feels confusing")
+
+**Before:** all 15 view blocks stacked at the bottom in creation order, with 4 H2 headings sitting empty above them. The layout was logically split but visually fused into one wall.
+
+**After:**
+- 📊 [Dashboard](https://app.notion.com/p/35177fd266b5818e8e21d201ceef6505) is now an **above-the-fold cockpit**: 60-second scan, 5 views in priority order — 🚨 Overdue → ☀️ Today's Tasks → 📞 Today's Calls → 💸 Outstanding Invoices → ⏰ Stale Active Clients.
+- New 📂 [Drill Down](https://app.notion.com/p/35177fd266b58118b967db1900a092f8) subpage holds everything else: 🔁 Top Open Deals, 🔁 Pipeline by Stage, 🏆 Won Deals by Offer, 💰 Active MRR, 💰 This Month Invoiced, ❤️ Active Projects by Health, 🎯 Project Timeline.
+- All 15 build-time views (including chart-attempt duds) were deleted via `replace_content` with `allow_deleting_content`. Replaced with 12 fresh, well-named views in the right pages.
+
+The rule going forward: anything you don't need in a 60-second morning scan goes in Drill Down.
+
 — Claude
