@@ -1,0 +1,15 @@
+{
+  "name": "wise-os-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lead-webhook": "node lead_to_pipeline.js",
+    "won-deal-watcher": "node won_deal_to_project.js"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1"
+  }
+}
