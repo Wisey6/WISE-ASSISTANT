@@ -37,3 +37,6 @@ android/
 
 # TypeScript
 *.tsbuildinfo
+
+# Written by the WiseAI hub; never commit locally
+.wiseai/status.md
